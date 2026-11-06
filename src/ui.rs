@@ -1,0 +1,514 @@
+﻿//! Frameless WebView2 window. Rust owns the downloads; the page owns the pixels.
+//!
+//! Rust -> page: `__state(json)` pushed on a timer.
+//! page -> Rust: one JSON command per `window.ipc.postMessage` call.
+
+use crate::download::Status;
+use crate::App;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tao::dpi::LogicalSize;
+use tao::event::{Event, WindowEvent};
+use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tao::platform::windows::WindowBuilderExtWindows;
+use tao::window::{Fullscreen, ResizeDirection, Window, WindowBuilder};
+use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::{Icon as TrayImage, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use wry::WebViewBuilder;
+
+const HTML: &str = include_str!("ui.html");
+const FONT_B64: &str = include_str!("../assets/display.b64");
+const TRAY_RGBA: &[u8] = include_bytes!("../assets/tray.rgba");
+const TRAY_PX: u32 = 32;
+
+#[derive(Debug)]
+enum UserEvent {
+    Command(String),
+    Tick,
+    Captured,
+    TrayOpen,
+    TrayMenu(MenuId),
+}
+
+/// Bring the window back from the tray.
+fn reveal(window: &Window) {
+    window.set_visible(true);
+    window.set_minimized(false);
+    window.set_focus();
+}
+
+#[derive(Serialize)]
+struct JobView {
+    id: u64,
+    name: String,
+    total: u64,
+    done: u64,
+    status: &'static str,
+    error: String,
+    speed: f64,
+    eta: f64,
+}
+
+#[derive(Serialize)]
+struct StateView {
+    jobs: Vec<JobView>,
+    active: usize,
+    rate: f64,
+    dir: String,
+    connections: u64,
+    parallel: usize,
+    maximized: bool,
+    autostart: bool,
+}
+
+/// Exponential moving average of each job's byte rate.
+#[derive(Default)]
+struct Meter {
+    marks: HashMap<u64, (Instant, u64, f64)>,
+}
+
+impl Meter {
+    fn sample(&mut self, id: u64, done: u64, active: bool) -> f64 {
+        let now = Instant::now();
+        let slot = self.marks.entry(id).or_insert((now, done, 0.0));
+        let elapsed = now.duration_since(slot.0).as_secs_f64();
+        if elapsed >= 0.35 {
+            let instant = done.saturating_sub(slot.1) as f64 / elapsed;
+            let smoothed = if slot.2 == 0.0 { instant } else { slot.2 * 0.65 + instant * 0.35 };
+            *slot = (now, done, smoothed);
+        }
+        if active {
+            slot.2
+        } else {
+            0.0
+        }
+    }
+
+    fn forget_missing(&mut self, live: &[u64]) {
+        self.marks.retain(|id, _| live.contains(id));
+    }
+}
+
+fn snapshot(app: &App, meter: &mut Meter, maximized: bool) -> StateView {
+    let mut jobs = app.jobs.lock().unwrap().clone();
+    // newest first: the download you just started is the one you want to see
+    jobs.sort_by(|a, b| b.id.cmp(&a.id));
+    let live: Vec<u64> = jobs.iter().map(|j| j.id).collect();
+    meter.forget_missing(&live);
+
+    let mut views = Vec::with_capacity(jobs.len());
+    let (mut active, mut rate) = (0usize, 0.0f64);
+    for job in jobs.iter() {
+        let state = job.status();
+        let done = job.done.load(Ordering::Relaxed);
+        let total = job.total.load(Ordering::Relaxed);
+        let downloading = state == Status::Downloading;
+        let speed = meter.sample(job.id, done, downloading);
+        if downloading {
+            active += 1;
+            rate += speed;
+        }
+        let eta = if total > 0 && speed > 512.0 {
+            (total.saturating_sub(done)) as f64 / speed
+        } else {
+            0.0
+        };
+        views.push(JobView {
+            id: job.id,
+            name: job.name.lock().unwrap().clone(),
+            total,
+            done,
+            status: state.label(),
+            error: job.error.lock().unwrap().clone(),
+            speed,
+            eta,
+        });
+    }
+    let config = app.config.lock().unwrap();
+    StateView {
+        jobs: views,
+        active,
+        rate,
+        dir: config.dir.clone(),
+        connections: config.connections,
+        parallel: config.parallel,
+        maximized,
+        autostart: crate::is_autostart(),
+    }
+}
+
+fn direction_for(name: &str) -> Option<ResizeDirection> {
+    Some(match name {
+        "n" => ResizeDirection::North,
+        "s" => ResizeDirection::South,
+        "e" => ResizeDirection::East,
+        "w" => ResizeDirection::West,
+        "ne" => ResizeDirection::NorthEast,
+        "nw" => ResizeDirection::NorthWest,
+        "se" => ResizeDirection::SouthEast,
+        "sw" => ResizeDirection::SouthWest,
+        _ => return None,
+    })
+}
+
+fn open_in_explorer(path: &str, select: bool) {
+    let mut command = std::process::Command::new("explorer");
+    if select {
+        command.arg("/select,");
+    }
+    let _ = command.arg(path).spawn();
+}
+
+pub fn run() {
+    let app = App::new();
+    let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
+
+    let window = WindowBuilder::new()
+        .with_title(crate::APP_NAME)
+        .with_inner_size(LogicalSize::new(1020.0, 640.0))
+        .with_min_inner_size(LogicalSize::new(760.0, 460.0))
+        .with_decorations(false)
+        .with_undecorated_shadow(true)
+        .with_visible(false) // revealed once the page paints, so there is no white flash
+        .build(&event_loop)
+        .expect("create window");
+
+    let ipc_proxy = proxy.clone();
+    let webview = WebViewBuilder::new()
+        .with_html(HTML.replace("{{FONT}}", FONT_B64.trim()))
+        .with_background_color((12, 13, 20, 255))
+        .with_ipc_handler(move |request| {
+            let _ = ipc_proxy.send_event(UserEvent::Command(request.into_body()));
+        })
+        .build(&window)
+        .expect("create webview");
+
+    // The app lives in the tray so a captured download opens instantly
+    // instead of paying for a cold start.
+    let tray_menu = Menu::new();
+    let open_item = MenuItem::new("Open IDM-lite", true, None);
+    let folder_item = MenuItem::new("Open download folder", true, None);
+    let quit_item = MenuItem::new("Exit", true, None);
+    let _ = tray_menu.append(&open_item);
+    let _ = tray_menu.append(&PredefinedMenuItem::separator());
+    let _ = tray_menu.append(&folder_item);
+    let _ = tray_menu.append(&PredefinedMenuItem::separator());
+    let _ = tray_menu.append(&quit_item);
+    let (open_id, folder_id, quit_id) =
+        (open_item.id().clone(), folder_item.id().clone(), quit_item.id().clone());
+
+    let tray = TrayImage::from_rgba(TRAY_RGBA.to_vec(), TRAY_PX, TRAY_PX)
+        .ok()
+        .and_then(|icon| {
+            TrayIconBuilder::new()
+                .with_menu(Box::new(tray_menu))
+                .with_tooltip(crate::APP_NAME)
+                .with_icon(icon)
+                .build()
+                .ok()
+        });
+
+    let menu_proxy = proxy.clone();
+    std::thread::spawn(move || {
+        while let Ok(event) = MenuEvent::receiver().recv() {
+            if menu_proxy.send_event(UserEvent::TrayMenu(event.id)).is_err() {
+                return;
+            }
+        }
+    });
+    let tray_proxy = proxy.clone();
+    std::thread::spawn(move || {
+        while let Ok(event) = TrayIconEvent::receiver().recv() {
+            let wants_open = matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } | TrayIconEvent::DoubleClick { button: MouseButton::Left, .. }
+            );
+            if wants_open && tray_proxy.send_event(UserEvent::TrayOpen).is_err() {
+                return;
+            }
+        }
+    });
+
+    // captures arriving from the browser host stub
+    let wake = proxy.clone();
+    if let Err(e) = crate::serve_ipc(app.clone(), Box::new(move || {
+        let _ = wake.send_event(UserEvent::Captured);
+    })) {
+        eprintln!("loopback port unavailable: {}", e);
+    }
+    if !crate::is_registered() {
+        crate::register();
+    }
+
+    // state pump: brisk while something moves, lazy when nothing does
+    let tick_app = app.clone();
+    let tick_proxy = proxy.clone();
+    std::thread::spawn(move || loop {
+        let busy = tick_app
+            .jobs
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|j| j.status().active());
+        std::thread::sleep(Duration::from_millis(if busy { 200 } else { 800 }));
+        if tick_proxy.send_event(UserEvent::Tick).is_err() {
+            return;
+        }
+    });
+
+    let mut meter = Meter::default();
+    let mut shown = false;
+    let mut visible = false;
+
+    event_loop.run(move |event, _target, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        let _ = &tray; // keep the icon alive for as long as the loop runs
+
+        let push = |meter: &mut Meter, visible: bool| {
+            if !visible {
+                return; // nothing is on screen to update
+            }
+            let state = snapshot(&app, meter, window.is_maximized());
+            if let Ok(json) = serde_json::to_string(&state) {
+                let _ = webview.evaluate_script(&format!("window.__state({})", json));
+            }
+        };
+
+        match event {
+            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+                // a download manager belongs in the tray, not gone
+                window.set_visible(false);
+                visible = false;
+            }
+            Event::UserEvent(UserEvent::Tick) => push(&mut meter, visible),
+            Event::UserEvent(UserEvent::TrayOpen) => {
+                reveal(&window);
+                visible = true;
+                push(&mut meter, visible);
+            }
+            Event::UserEvent(UserEvent::TrayMenu(id)) => {
+                if id == open_id {
+                    reveal(&window);
+                    visible = true;
+                    push(&mut meter, visible);
+                } else if id == folder_id {
+                    let dir = app.config.lock().unwrap().dir.clone();
+                    let _ = std::fs::create_dir_all(&dir);
+                    open_in_explorer(&dir, false);
+                } else if id == quit_id {
+                    shutdown(&app);
+                    *control_flow = ControlFlow::Exit;
+                }
+            }
+            Event::UserEvent(UserEvent::Captured) => {
+                for capture in app.inbox.lock().unwrap().drain(..).collect::<Vec<_>>() {
+                    if !capture.url.is_empty() {
+                        app.add(&capture.url, capture.headers(), &capture.filename);
+                    }
+                }
+                reveal(&window);
+                visible = true;
+                push(&mut meter, visible);
+            }
+            Event::UserEvent(UserEvent::Command(raw)) => {
+                let msg: serde_json::Value = match serde_json::from_str(&raw) {
+                    Ok(v) => v,
+                    Err(_) => return,
+                };
+                let cmd = msg.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
+                let ids: Vec<u64> = msg
+                    .get("ids")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_u64()).collect())
+                    .unwrap_or_default();
+
+                match cmd {
+                    "ready" => {
+                        if !shown {
+                            shown = true;
+                            window.set_visible(true);
+                            visible = true;
+                        }
+                        push(&mut meter, visible);
+                        return;
+                    }
+                    "drag" => {
+                        let _ = window.drag_window();
+                        return;
+                    }
+                    "resize" => {
+                        if let Some(dir) =
+                            msg.get("dir").and_then(|d| d.as_str()).and_then(direction_for)
+                        {
+                            let _ = window.drag_resize_window(dir);
+                        }
+                        return;
+                    }
+                    "minimize" => {
+                        window.set_minimized(true);
+                        return;
+                    }
+                    "maximize" => {
+                        window.set_fullscreen(None::<Fullscreen>);
+                        window.set_maximized(!window.is_maximized());
+                    }
+                    "close" => {
+                        window.set_visible(false);
+                        visible = false;
+                        return;
+                    }
+                    "quit" => {
+                        shutdown(&app);
+                        *control_flow = ControlFlow::Exit;
+                        return;
+                    }
+                    "add" => {
+                        if let Some(url) = msg.get("url").and_then(|u| u.as_str()) {
+                            let ua = ("User-Agent".to_string(), "Mozilla/5.0".to_string());
+                            app.add(url.trim(), vec![ua], "");
+                        }
+                    }
+                    "pause" => ids.iter().for_each(|id| app.pause(*id)),
+                    "resume" => ids.iter().for_each(|id| app.resume(*id)),
+                    "remove" => {
+                        ids.iter().for_each(|id| app.remove(*id));
+                    }
+                    "reveal" => {
+                        for id in &ids {
+                            if let Some(job) = app.find(*id) {
+                                let path = job.path.lock().unwrap().clone();
+                                if !path.is_empty() && std::path::Path::new(&path).exists() {
+                                    open_in_explorer(&path, true);
+                                }
+                            }
+                        }
+                    }
+                    "open" => {
+                        for id in &ids {
+                            if let Some(job) = app.find(*id) {
+                                let path = job.path.lock().unwrap().clone();
+                                if job.status() == Status::Done
+                                    && std::path::Path::new(&path).exists()
+                                {
+                                    open_in_explorer(&path, false);
+                                }
+                            }
+                        }
+                    }
+                    "link" => {
+                        // only plain https, passed as one argument, never a shell string
+                        if let Some(url) = msg.get("url").and_then(|u| u.as_str()) {
+                            let safe = url.starts_with("https://")
+                                && !url.contains(char::is_whitespace)
+                                && url.len() < 300;
+                            if safe {
+                                let _ = std::process::Command::new("explorer").arg(url).spawn();
+                            }
+                        }
+                        return;
+                    }
+                    "folder" => {
+                        let dir = app.config.lock().unwrap().dir.clone();
+                        let _ = std::fs::create_dir_all(&dir);
+                        open_in_explorer(&dir, false);
+                        return;
+                    }
+                    "pick" => {
+                        let current = app.config.lock().unwrap().dir.clone();
+                        if let Some(picked) =
+                            rfd::FileDialog::new().set_directory(&current).pick_folder()
+                        {
+                            let mut config = app.config.lock().unwrap();
+                            config.dir = picked.to_string_lossy().into_owned();
+                            config.save();
+                        }
+                    }
+                    "settings" => {
+                        let mut config = app.config.lock().unwrap();
+                        if let Some(dir) = msg.get("dir").and_then(|d| d.as_str()) {
+                            if !dir.trim().is_empty() {
+                                config.dir = dir.to_string();
+                            }
+                        }
+                        if let Some(n) = msg.get("connections").and_then(|v| v.as_u64()) {
+                            config.connections = n.clamp(1, 32);
+                        }
+                        if let Some(n) = msg.get("parallel").and_then(|v| v.as_u64()) {
+                            config.parallel = (n as usize).clamp(1, 10);
+                        }
+                        config.save();
+                        drop(config);
+                        if let Some(on) = msg.get("autostart").and_then(|v| v.as_bool()) {
+                            crate::set_autostart(on);
+                        }
+                    }
+                    "register" => {
+                        crate::register();
+                    }
+                    _ => return,
+                }
+                push(&mut meter, visible);
+            }
+            _ => {}
+        }
+    });
+}
+
+fn shutdown(app: &Arc<App>) {
+    for job in app.jobs.lock().unwrap().iter() {
+        job.stop.store(true, Ordering::Relaxed);
+    }
+    // let workers flush their resume sidecars before the process goes away
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline
+        && app.jobs.lock().unwrap().iter().any(|j| j.status() == Status::Downloading)
+    {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    app.save();
+    let _ = std::fs::remove_file(crate::data_file("ipc.json"));
+}
+
+// ------------------------------------------------------------------- tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meter_reports_zero_for_idle_jobs() {
+        let mut meter = Meter::default();
+        meter.sample(1, 0, true);
+        std::thread::sleep(Duration::from_millis(400));
+        let moving = meter.sample(1, 1_000_000, true);
+        assert!(moving > 0.0, "a job that advanced should report a rate");
+        assert_eq!(meter.sample(1, 1_000_000, false), 0.0, "paused jobs show no speed");
+    }
+
+    #[test]
+    fn meter_forgets_removed_jobs() {
+        let mut meter = Meter::default();
+        meter.sample(1, 10, true);
+        meter.sample(2, 10, true);
+        meter.forget_missing(&[2]);
+        assert!(!meter.marks.contains_key(&1));
+        assert!(meter.marks.contains_key(&2));
+    }
+
+    #[test]
+    fn resize_directions_cover_all_eight_edges() {
+        for name in ["n", "s", "e", "w", "ne", "nw", "se", "sw"] {
+            assert!(direction_for(name).is_some(), "missing {}", name);
+        }
+        assert!(direction_for("middle").is_none());
+    }
+}
+

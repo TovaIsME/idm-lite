@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IDM-lite</title>
+<style>
+@font-face {
+  font-family: "IDM Display";
+  src: url(data:font/woff2;base64,{{FONT}}) format("woff2");
+  font-weight: 400 700;
+  font-display: block;
+}
+
+:root {
+  --void: #0a0a0b;
+  --base: #121213;
+  --raise: #191919;
+  --raise-2: #212122;
+  --hair: #2b2b2d;
+  --hair-soft: #1f1f21;
+
+  --ink: #e8e6e3;
+  --ink-2: #a09d98;
+  --ink-3: #6b6864;
+
+  --accent: #ff7a1a;
+  --accent-soft: rgba(255, 122, 26, 0.16);
+  --go: #5aa469;
+  --amber: #d9a441;
+  --stop: #d2544b;
+
+  /* kept as names so every rule reads the accent from one place */
+  --cyan: var(--accent);
+  --flow: var(--accent);
+
+  --snap: cubic-bezier(0.16, 1, 0.3, 1);
+  --glide: cubic-bezier(0.33, 1, 0.68, 1);
+
+  --titlebar: 40px;
+  --statusbar: 32px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--void);
+}
+
+body {
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+::selection { background: rgba(255, 122, 26, 0.35); color: #fff; }
+
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ---------------------------------------------------------------- shell */
+
+#shell {
+  position: relative;
+  height: 100%;
+  display: grid;
+  grid-template-rows: var(--titlebar) auto 1fr var(--statusbar);
+  background: var(--base);
+}
+
+/* ------------------------------------------------------------- titlebar */
+
+#titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 13px;
+  border-bottom: 1px solid var(--hair);
+  background: var(--void);
+}
+
+#brand { display: flex; align-items: center; gap: 9px; }
+
+#brand .glyph {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--accent);
+}
+#brand .glyph svg { width: 12px; height: 12px; color: #fff; }
+
+#brand .wordmark {
+  font-family: "IDM Display", system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#chrome { display: flex; height: 100%; }
+
+.chrome-btn {
+  width: 44px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+  transition: background 140ms var(--glide), color 140ms var(--glide);
+}
+.chrome-btn svg { width: 11px; height: 11px; }
+.chrome-btn:hover { background: var(--raise-2); color: var(--ink); }
+.chrome-btn.danger:hover { background: #d93b4a; color: #fff; }
+.chrome-btn:active { transform: scale(0.94); }
+
+/* -------------------------------------------------------------- toolbar */
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 14px;
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--hair);
+  border-radius: 5px;
+  background: var(--raise);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  transition: transform 180ms var(--snap), background 180ms var(--glide),
+              border-color 180ms var(--glide), box-shadow 180ms var(--glide);
+}
+.tool svg { width: 15px; height: 15px; color: var(--ink-2); transition: color 180ms var(--glide); }
+.tool:hover:not(:disabled) {
+  background: var(--raise-2);
+  border-color: #3a3a3d;
+}
+.tool:hover:not(:disabled) svg { color: var(--ink); }
+.tool:active:not(:disabled) { transform: translateY(0) scale(0.975); }
+.tool:disabled { opacity: 0.34; }
+
+.tool.primary {
+  border-color: #8a4210;
+  background: var(--accent);
+  color: #1b0d03;
+  font-weight: 600;
+}
+.tool.primary svg { color: #1b0d03; }
+.tool.primary:hover:not(:disabled) { background: #ff8c38; border-color: #a04d12; }
+
+.spacer { flex: 1; }
+
+.icon-tool {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--hair);
+  border-radius: 5px;
+  background: var(--raise);
+  color: var(--ink-2);
+  transition: background 150ms var(--glide), color 150ms var(--glide);
+}
+.icon-tool svg { width: 16px; height: 16px; }
+.icon-tool:hover { background: var(--raise-2); color: var(--ink); }
+.icon-tool:active { transform: scale(0.94); }
+
+/* ------------------------------------------------------------- composer */
+
+#composer {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin: 0 14px;
+  transition: grid-template-rows 320ms var(--snap);
+}
+#composer.open { grid-template-rows: 1fr; }
+#composer > div { overflow: hidden; }
+#composer form { margin-bottom: 11px; }
+
+#composer form {
+  display: flex;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid var(--hair);
+  border-radius: 5px;
+  background: var(--raise);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 260ms var(--glide) 60ms, transform 320ms var(--snap) 60ms;
+}
+#composer.open form { opacity: 1; transform: none; }
+
+#url {
+  flex: 1;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  background: #0e0e0f;
+  color: var(--ink);
+  font: inherit;
+  caret-color: var(--cyan);
+  -webkit-user-select: text;
+  user-select: text;
+  transition: border-color 180ms var(--glide), box-shadow 180ms var(--glide);
+}
+#url::placeholder { color: var(--ink-3); }
+#url:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(255, 122, 26, 0.25);
+}
+
+/* ----------------------------------------------------------------- list */
+
+#scroll { overflow-y: auto; overflow-x: hidden; padding: 2px 14px 14px; }
+
+#scroll::-webkit-scrollbar { width: 10px; }
+#scroll::-webkit-scrollbar-track { background: transparent; }
+#scroll::-webkit-scrollbar-thumb {
+  background: #313134;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+#scroll::-webkit-scrollbar-thumb:hover { background: #3e3e42; background-clip: content-box; }
+
+#list { display: flex; flex-direction: column; gap: 7px; }
+
+.row {
+  position: relative;
+  padding: 10px 13px;
+  border: 1px solid var(--hair-soft);
+  border-radius: 5px;
+  background: var(--raise);
+  overflow: hidden;
+  transition: background 200ms var(--glide), border-color 200ms var(--glide),
+              transform 260ms var(--snap), box-shadow 260ms var(--glide);
+  animation: row-in 520ms var(--snap) backwards;
+}
+
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); filter: blur(7px); }
+  to   { opacity: 1; transform: none; filter: none; }
+}
+
+.row.leaving {
+  animation: row-out 260ms var(--glide) forwards;
+  pointer-events: none;
+}
+@keyframes row-out {
+  to { opacity: 0; transform: translateX(26px) scale(0.97); filter: blur(5px); }
+}
+
+.row:hover { background: var(--raise-2); border-color: var(--hair); }
+.row.selected {
+  background: #221a13;
+  border-color: var(--accent);
+}
+
+/* the completion sweep, played once when a download lands */
+.row.landed::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 32%, rgba(90, 164, 105, 0.26) 50%, transparent 68%);
+  animation: sweep 900ms var(--glide);
+}
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+.row-top { display: flex; align-items: center; gap: 10px; }
+
+.kind {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: #242425;
+  color: var(--ink-2);
+  transition: color 200ms var(--glide), background 200ms var(--glide);
+}
+.kind svg { width: 15px; height: 15px; }
+.row[data-status="downloading"] .kind { color: #1b0d03; background: var(--accent); }
+.row[data-status="done"] .kind { color: var(--go); background: rgba(90, 164, 105, 0.14); }
+.row[data-status="error"] .kind { color: var(--stop); background: rgba(210, 84, 75, 0.14); }
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spark { flex: none; width: 64px; height: 20px; opacity: 0; transition: opacity 300ms var(--glide); }
+.row[data-status="downloading"] .spark { opacity: 1; }
+.spark path { fill: none; stroke: var(--cyan); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+
+.rate {
+  flex: none;
+  min-width: 82px;
+  text-align: right;
+  font-family: "IDM Display", system-ui, sans-serif;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--cyan);
+}
+.rate.quiet { color: var(--ink-3); }
+
+.track {
+  position: relative;
+  height: 4px;
+  margin: 9px 0 7px;
+  border-radius: 2px;
+  background: #272728;
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 420ms var(--snap);
+}
+.row[data-status="paused"] .fill { background: #5c5a56; }
+.row[data-status="done"] .fill { background: var(--go); }
+.row[data-status="error"] .fill { background: var(--stop); }
+
+/* light runs along the bar only while bytes are actually moving */
+.row[data-status="downloading"] .fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: shimmer 1.5s linear infinite;
+}
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+.row[data-status="connecting"] .track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 36%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: hunt 1.25s var(--glide) infinite;
+}
+@keyframes hunt {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(310%); }
+}
+
+.row-bottom {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.dot { width: 3px; height: 3px; border-radius: 50%; background: var(--ink-3); flex: none; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: #242425;
+  color: var(--ink-2);
+}
+.chip i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.row[data-status="downloading"] .chip { background: var(--accent-soft); color: #ff9c4f; }
+.row[data-status="connecting"] .chip { background: rgba(217, 164, 65, 0.15); color: var(--amber); }
+.row[data-status="done"] .chip { background: rgba(90, 164, 105, 0.15); color: #78c089; }
+.row[data-status="error"] .chip { background: rgba(210, 84, 75, 0.15); color: #e2736b; }
+.row[data-status="downloading"] .chip i,
+.row[data-status="connecting"] .chip i { animation: throb 1.5s var(--glide) infinite; }
+@keyframes throb { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+.why { color: var(--stop); font-size: 13px; }
+
+/* ---------------------------------------------------------- empty state */
+
+#empty {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 15px;
+  text-align: center;
+  animation: row-in 700ms var(--snap);
+}
+#empty svg { width: 54px; height: 54px; color: var(--ink-3); }
+#empty svg .arc { animation: orbit 3.4s var(--glide) infinite; transform-origin: 12px 12px; }
+@keyframes orbit { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
+#empty h1 { font-family: "IDM Display", system-ui, sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+#empty p { color: var(--ink-2); max-width: 46ch; line-height: 1.6; }
+
+/* -------------------------------------------------------------- drawer */
+
+#scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  background: rgba(4, 5, 10, 0.6);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 280ms var(--glide);
+}
+#scrim.open { opacity: 1; pointer-events: auto; }
+
+#drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9;
+  width: 350px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  border-left: 1px solid var(--hair);
+  background: var(--base);
+  box-shadow: -14px 0 34px rgba(0, 0, 0, 0.55);
+  transform: translateX(100%);
+  transition: transform 380ms var(--snap);
+}
+#drawer.open { transform: none; }
+
+#drawer h2 { font-family: "IDM Display", system-ui, sans-serif; font-size: 18px; font-weight: 700; letter-spacing: -0.005em; }
+
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field label { font-size: 13px; color: var(--ink-2); font-weight: 500; }
+.field .with-btn { display: flex; gap: 7px; }
+
+.field input[type="text"], .field input[type="number"] {
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--hair);
+  border-radius: 4px;
+  background: #0e0e0f;
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  caret-color: var(--cyan);
+  -webkit-user-select: text;
+  user-select: text;
+  min-width: 0;
+  flex: 1;
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(255, 122, 26, 0.25);
+}
+.field .hint { font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+
+.credit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 13px;
+  border-top: 1px solid var(--hair-soft);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.credit b { color: var(--ink-2); font-weight: 600; }
+.link {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(255, 122, 26, 0.45);
+  transition: text-decoration-color 150ms var(--glide);
+}
+.link:hover { text-decoration-color: var(--accent); }
+
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.toggle span { font-size: 13px; color: var(--ink-2); font-weight: 500; }
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--hair);
+  border-radius: 99px;
+  background: #2b2b2d;
+  transition: background 220ms var(--glide), border-color 220ms var(--glide);
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  transition: transform 300ms var(--snap), background 220ms var(--glide);
+}
+.switch[aria-checked="true"] { background: var(--accent); border-color: #8a4210; }
+.switch[aria-checked="true"]::after { transform: translateX(18px); background: #fff; }
+.switch:active::after { width: 22px; }
+
+/* ----------------------------------------------------------- statusbar */
+
+#statusbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 15px;
+  border-top: 1px solid var(--hair);
+  background: var(--void);
+  font-size: 13px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+#pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  transition: background 320ms var(--glide), box-shadow 320ms var(--glide);
+}
+#pulse { position: relative; }
+#pulse.live { background: var(--cyan); }
+#pulse.live::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  animation: ping 1.9s var(--glide) infinite;
+}
+@keyframes ping {
+  0%   { transform: scale(0.7); opacity: 0.7; }
+  70%  { transform: scale(2.4); opacity: 0; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+#total { font-family: "IDM Display", system-ui, sans-serif; font-weight: 500; color: var(--ink); }
+#where { margin-left: auto; color: var(--ink-3); max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --------------------------------------------------------- resize grips */
+
+.grip { position: fixed; z-index: 20; }
+.grip.n { top: 0; left: 6px; right: 6px; height: 5px; cursor: ns-resize; }
+.grip.s { bottom: 0; left: 6px; right: 6px; height: 5px; cursor: ns-resize; }
+.grip.w { left: 0; top: 6px; bottom: 6px; width: 5px; cursor: ew-resize; }
+.grip.e { right: 0; top: 6px; bottom: 6px; width: 5px; cursor: ew-resize; }
+.grip.nw { top: 0; left: 0; width: 9px; height: 9px; cursor: nwse-resize; }
+.grip.ne { top: 0; right: 0; width: 9px; height: 9px; cursor: nesw-resize; }
+.grip.sw { bottom: 0; left: 0; width: 9px; height: 9px; cursor: nesw-resize; }
+.grip.se { bottom: 0; right: 0; width: 9px; height: 9px; cursor: nwse-resize; }
+body.maxed .grip { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/>
+  </symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 5v14"/><path d="M5 12h14"/>
+  </symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 5v14"/><path d="M15 5v14"/>
+  </symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 4.8v14.4a.6.6 0 0 0 .92.5l11.3-7.2a.6.6 0 0 0 0-1l-11.3-7.2a.6.6 0 0 0-.92.5Z"/>
+  </symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/>
+    <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+  </symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>
+  </symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3.2"/>
+    <path d="M19.4 14.5a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.88 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.88.34H9.1a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.88v.08a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1.03Z"/>
+  </symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/>
+  </symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m5 13 4.5 4.5L19 7"/>
+  </symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.3h.01"/>
+  </symbol>
+  <symbol id="i-min" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2.5 6h7"/></symbol>
+  <symbol id="i-max" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="2.5" width="7" height="7" rx="1.3"/></symbol>
+  <symbol id="i-restore" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3">
+    <rect x="2.2" y="4.1" width="5.7" height="5.7" rx="1.2"/><path d="M4.4 4.1V3.4A1.2 1.2 0 0 1 5.6 2.2h3.1A1.2 1.2 0 0 1 9.9 3.4v3.1A1.2 1.2 0 0 1 8.7 7.7H8"/>
+  </symbol>
+  <symbol id="i-close" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+    <path d="m3 3 6 6"/><path d="m9 3-6 6"/>
+  </symbol>
+  <symbol id="i-empty" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 4v9"/><path d="m8.5 9.5 3.5 3.5 3.5-3.5"/>
+    <path class="arc" d="M4 15a8 8 0 0 0 16 0"/>
+  </symbol>
+</svg>
+
+<div id="shell">
+  <div id="titlebar">
+    <div id="brand">
+      <span class="glyph"><svg><use href="#i-down"/></svg></span>
+      <span class="wordmark">IDM-lite</span>
+    </div>
+    <div id="chrome">
+      <button class="chrome-btn" id="btn-min" title="Minimize"><svg><use href="#i-min"/></svg></button>
+      <button class="chrome-btn" id="btn-max" title="Maximize"><svg><use href="#i-max"/></svg></button>
+      <button class="chrome-btn danger" id="btn-close" title="Close to tray"><svg><use href="#i-close"/></svg></button>
+    </div>
+  </div>
+
+  <div>
+    <div id="toolbar">
+      <button class="tool primary" id="t-add"><svg><use href="#i-plus"/></svg>Add URL</button>
+      <button class="tool" id="t-pause" disabled><svg><use href="#i-pause"/></svg>Pause</button>
+      <button class="tool" id="t-resume" disabled><svg><use href="#i-play"/></svg>Resume</button>
+      <button class="tool" id="t-remove" disabled><svg><use href="#i-trash"/></svg>Remove</button>
+      <span class="spacer"></span>
+      <button class="icon-tool" id="t-folder" title="Open download folder"><svg><use href="#i-folder"/></svg></button>
+      <button class="icon-tool" id="t-settings" title="Settings"><svg><use href="#i-gear"/></svg></button>
+    </div>
+
+    <div id="composer">
+      <div>
+        <form id="add-form">
+          <input id="url" type="text" spellcheck="false" placeholder="Paste a link to download">
+          <button class="tool primary" type="submit">Download</button>
+          <button class="tool" type="button" id="t-cancel">Cancel</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="scroll">
+    <div id="list"></div>
+    <div id="empty">
+      <svg><use href="#i-empty"/></svg>
+      <h1>Nothing downloading</h1>
+      <p>Start a download in your browser and it lands here automatically. Or paste a link with Add URL.</p>
+    </div>
+  </div>
+
+  <div id="statusbar">
+    <span id="pulse"></span>
+    <span id="total">Idle</span>
+    <span id="where"></span>
+  </div>
+</div>
+
+<div id="scrim"></div>
+<aside id="drawer">
+  <h2>Settings</h2>
+  <div class="field">
+    <label for="s-dir">Save files to</label>
+    <div class="with-btn">
+      <input id="s-dir" type="text" spellcheck="false">
+      <button class="icon-tool" id="s-pick" title="Choose folder"><svg><use href="#i-folder"/></svg></button>
+    </div>
+  </div>
+  <div class="field">
+    <label for="s-conns">Connections per file</label>
+    <input id="s-conns" type="number" min="1" max="32">
+    <span class="hint">More connections speed up big files on servers that allow range requests.</span>
+  </div>
+  <div class="field">
+    <label for="s-par">Simultaneous downloads</label>
+    <input id="s-par" type="number" min="1" max="10">
+    <span class="hint">Takes effect the next time IDM-lite starts.</span>
+  </div>
+  <div class="field">
+    <div class="toggle">
+      <span id="s-auto-label">Start with Windows</span>
+      <button class="switch" id="s-auto" type="button" role="switch"
+              aria-checked="false" aria-labelledby="s-auto-label"></button>
+    </div>
+    <span class="hint">Keeps IDM-lite in the tray, so a captured download opens instantly.</span>
+  </div>
+  <span class="spacer"></span>
+  <div class="with-btn">
+    <button class="tool primary" id="s-save" style="flex:1;justify-content:center">Save</button>
+    <button class="tool" id="s-close" style="justify-content:center">Close</button>
+  </div>
+  <div class="credit">
+    <span>IDM-lite 1.0 by <b>Tova</b></span>
+    <button class="link" id="s-github" type="button">github.com/tovaisme</button>
+  </div>
+</aside>
+
+<div class="grip n" data-dir="n"></div><div class="grip s" data-dir="s"></div>
+<div class="grip w" data-dir="w"></div><div class="grip e" data-dir="e"></div>
+<div class="grip nw" data-dir="nw"></div><div class="grip ne" data-dir="ne"></div>
+<div class="grip sw" data-dir="sw"></div><div class="grip se" data-dir="se"></div>
+
+<script>
+const send = (o) => window.ipc.postMessage(JSON.stringify(o));
+const $ = (s) => document.querySelector(s);
+
+const UNITS = ["B", "KB", "MB", "GB", "TB"];
+function bytes(n) {
+  if (!n) return "0 B";
+  let v = n, i = 0;
+  while (v >= 1024 && i < UNITS.length - 1) { v /= 1024; i++; }
+  return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${UNITS[i]}`;
+}
+function duration(s) {
+  if (!s || !isFinite(s) || s <= 0) return null;
+  if (s < 60) return `${Math.round(s)}s left`;
+  if (s < 3600) return `${Math.round(s / 60)}m left`;
+  return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m left`;
+}
+const LABEL = {
+  queued: "Queued", connecting: "Connecting", downloading: "Downloading",
+  paused: "Paused", done: "Complete", error: "Failed",
+};
+const GLYPH = { done: "#i-check", error: "#i-alert" };
+
+let selection = new Set();
+let history = new Map();   // id -> recent speed samples, for the sparkline
+let landed = new Set();    // ids that already played the completion sweep
+let rows = new Map();      // id -> element
+let snapshot = [];
+let drawerOpen = false;
+
+function sparkline(samples) {
+  if (samples.length < 2) return "";
+  const w = 64, h = 20, peak = Math.max(...samples, 1);
+  return samples
+    .map((v, i) => `${i ? "L" : "M"}${((i / (samples.length - 1)) * w).toFixed(1)},${(h - 2 - (v / peak) * (h - 4)).toFixed(1)}`)
+    .join(" ");
+}
+
+function build(job) {
+  const el = document.createElement("div");
+  el.className = "row";
+  el.dataset.id = job.id;
+  el.innerHTML = `
+    <div class="row-top">
+      <span class="kind"><svg><use href="#i-file"/></svg></span>
+      <span class="name"></span>
+      <svg class="spark" viewBox="0 0 64 20" preserveAspectRatio="none"><path/></svg>
+      <span class="rate"></span>
+    </div>
+    <div class="track"><span class="fill"></span></div>
+    <div class="row-bottom">
+      <span class="got"></span>
+      <span class="dot"></span>
+      <span class="eta"></span>
+      <span class="chip"><i></i><span class="chip-text"></span></span>
+    </div>`;
+  el.addEventListener("click", (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      selection.has(job.id) ? selection.delete(job.id) : selection.add(job.id);
+    } else {
+      selection = new Set([job.id]);
+    }
+    paintSelection();
+  });
+  el.addEventListener("dblclick", () => send({ cmd: "open", ids: [job.id] }));
+  return el;
+}
+
+function paintSelection() {
+  for (const [id, el] of rows) el.classList.toggle("selected", selection.has(id));
+  const picked = [...selection].map((id) => snapshot.find((j) => j.id === id)).filter(Boolean);
+  $("#t-pause").disabled = !picked.some((j) => ["queued", "connecting", "downloading"].includes(j.status));
+  $("#t-resume").disabled = !picked.some((j) => ["paused", "error"].includes(j.status));
+  $("#t-remove").disabled = picked.length === 0;
+}
+
+function update(el, job) {
+  el.dataset.status = job.status;
+  el.querySelector(".name").textContent = job.name || "Resolving…";
+  el.querySelector(".kind use").setAttribute("href", GLYPH[job.status] || "#i-file");
+
+  const samples = history.get(job.id) || [];
+  if (job.status === "downloading") {
+    samples.push(job.speed);
+    if (samples.length > 40) samples.shift();
+    history.set(job.id, samples);
+  }
+  el.querySelector(".spark path").setAttribute("d", sparkline(samples));
+
+  const rate = el.querySelector(".rate");
+  rate.textContent = job.speed > 0 ? `${bytes(job.speed)}/s` : "";
+  rate.classList.toggle("quiet", !(job.speed > 0));
+
+  const pct = job.total ? Math.min(100, (job.done / job.total) * 100) : (job.status === "done" ? 100 : 0);
+  el.querySelector(".fill").style.width = `${pct}%`;
+
+  el.querySelector(".got").textContent = job.total
+    ? `${bytes(job.done)} of ${bytes(job.total)} · ${Math.round(pct)}%`
+    : (job.done ? bytes(job.done) : "Unknown size");
+
+  const eta = el.querySelector(".eta");
+  const left = job.status === "downloading" ? duration(job.eta) : null;
+  eta.textContent = left || "";
+  el.querySelector(".dot").style.display = left ? "" : "none";
+
+  const text = el.querySelector(".chip-text");
+  text.textContent = job.status === "error" && job.error
+    ? `Failed · ${job.error.slice(0, 48)}`
+    : LABEL[job.status] || job.status;
+
+  if (job.status === "done" && !landed.has(job.id)) {
+    landed.add(job.id);
+    el.classList.add("landed");
+    setTimeout(() => el.classList.remove("landed"), 950);
+  }
+}
+
+window.__state = (state) => {
+  snapshot = state.jobs;
+  const seen = new Set();
+
+  state.jobs.forEach((job, i) => {
+    seen.add(job.id);
+    let el = rows.get(job.id);
+    if (!el) {
+      el = build(job);
+      el.style.animationDelay = `${Math.min(i, 8) * 45}ms`;
+      rows.set(job.id, el);
+      const list = $("#list");
+      list.insertBefore(el, list.children[i] || null);
+    }
+    update(el, job);
+  });
+
+  for (const [id, el] of [...rows]) {
+    if (seen.has(id)) continue;
+    rows.delete(id);
+    selection.delete(id);
+    history.delete(id);
+    el.classList.add("leaving");
+    setTimeout(() => el.remove(), 280);
+  }
+
+  $("#empty").style.display = state.jobs.length ? "none" : "";
+  $("#pulse").classList.toggle("live", state.active > 0);
+  $("#total").textContent = state.active
+    ? `${state.active} downloading · ${bytes(state.rate)}/s`
+    : "Idle";
+  $("#where").textContent = state.dir;
+  document.body.classList.toggle("maxed", state.maximized);
+  $("#btn-max").firstElementChild.firstElementChild
+    .setAttribute("href", state.maximized ? "#i-restore" : "#i-max");
+
+  if (!drawerOpen) {
+    $("#s-dir").value = state.dir;
+    $("#s-conns").value = state.connections;
+    $("#s-par").value = state.parallel;
+    $("#s-auto").setAttribute("aria-checked", String(state.autostart));
+  }
+  paintSelection();
+};
+
+// window chrome
+$("#titlebar").addEventListener("mousedown", (e) => {
+  if (e.button === 0 && !e.target.closest("button")) send({ cmd: "drag" });
+});
+$("#titlebar").addEventListener("dblclick", (e) => {
+  if (!e.target.closest("button")) send({ cmd: "maximize" });
+});
+$("#btn-min").onclick = () => send({ cmd: "minimize" });
+$("#btn-max").onclick = () => send({ cmd: "maximize" });
+$("#btn-close").onclick = () => send({ cmd: "close" });
+document.querySelectorAll(".grip").forEach((g) =>
+  g.addEventListener("mousedown", (e) => {
+    if (e.button === 0) send({ cmd: "resize", dir: g.dataset.dir });
+  })
+);
+
+// toolbar
+const ids = () => [...selection];
+$("#t-pause").onclick = () => send({ cmd: "pause", ids: ids() });
+$("#t-resume").onclick = () => send({ cmd: "resume", ids: ids() });
+$("#t-remove").onclick = () => { send({ cmd: "remove", ids: ids() }); selection.clear(); };
+$("#t-folder").onclick = () => send({ cmd: "folder" });
+
+function openComposer(open) {
+  $("#composer").classList.toggle("open", open);
+  if (open) setTimeout(() => $("#url").focus(), 60); else $("#url").value = "";
+}
+$("#t-add").onclick = () => openComposer(!$("#composer").classList.contains("open"));
+$("#t-cancel").onclick = () => openComposer(false);
+$("#add-form").onsubmit = (e) => {
+  e.preventDefault();
+  const url = $("#url").value.trim();
+  if (!/^https?:\/\//i.test(url)) {
+    $("#url").focus();
+    $("#url").style.borderColor = "var(--rose)";
+    setTimeout(() => ($("#url").style.borderColor = ""), 1100);
+    return;
+  }
+  send({ cmd: "add", url });
+  openComposer(false);
+};
+
+// settings drawer
+function openDrawer(open) {
+  drawerOpen = open;
+  $("#drawer").classList.toggle("open", open);
+  $("#scrim").classList.toggle("open", open);
+}
+$("#t-settings").onclick = () => openDrawer(true);
+$("#s-close").onclick = () => openDrawer(false);
+$("#scrim").onclick = () => openDrawer(false);
+$("#s-pick").onclick = () => send({ cmd: "pick" });
+$("#s-github").onclick = () => send({ cmd: "link", url: "https://github.com/tovaisme" });
+$("#s-auto").onclick = (e) => {
+  const on = e.currentTarget.getAttribute("aria-checked") === "true";
+  e.currentTarget.setAttribute("aria-checked", String(!on));
+};
+$("#s-save").onclick = () => {
+  send({
+    cmd: "settings",
+    dir: $("#s-dir").value,
+    connections: Number($("#s-conns").value) || 8,
+    parallel: Number($("#s-par").value) || 3,
+    autostart: $("#s-auto").getAttribute("aria-checked") === "true",
+  });
+  openDrawer(false);
+};
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { openComposer(false); openDrawer(false); }
+  if (e.key === "Delete" && selection.size) { send({ cmd: "remove", ids: ids() }); selection.clear(); }
+  if (e.ctrlKey && e.key.toLowerCase() === "n") { e.preventDefault(); openComposer(true); }
+  if (e.ctrlKey && e.key.toLowerCase() === "a") {
+    e.preventDefault();
+    selection = new Set(snapshot.map((j) => j.id));
+    paintSelection();
+  }
+});
+
+send({ cmd: "ready" });
+</script>
+</body>
+</html>
