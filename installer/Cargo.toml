@@ -1,0 +1,23 @@
+[package]
+name = "idm-lite-setup"
+version = "1.0.0"
+edition = "2021"
+description = "Installer for IDM-lite"
+
+# Built by tools/package.py, which stages dist/payload first. It is a separate
+# crate so a plain `cargo build` at the repo root never needs that payload.
+[[bin]]
+name = "IDM-lite-Setup"
+path = "src/main.rs"
+
+[dependencies]
+winreg = "0.56"
+
+[build-dependencies]
+embed-resource = "3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

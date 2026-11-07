@@ -29,16 +29,23 @@ A browser extension watches your downloads. The moment one starts, it hands the 
 
 ## Install
 
-Grab the zip from [Releases](https://github.com/tovaisme/idm-lite/releases/latest) and unpack it anywhere.
+Download **[IDM-lite-Setup-1.0.0.exe](https://github.com/tovaisme/idm-lite/releases/latest)** and run it. No admin rights needed, everything installs for your user only.
+
+The installer puts the app in `%LOCALAPPDATA%\Programs\IDM-lite`, registers it with Chrome, Edge, Brave and Chromium, adds a Start menu entry, lists itself in Add or remove programs, and starts the app in your tray.
+
+Then it opens the Extensions page for the one step it is not allowed to do for you:
 
 ```
-1.  Run Install.bat                      registers the app with your browser
-2.  Open chrome://extensions             turn on Developer mode
-3.  Load unpacked  ->  extension/        the folder from the zip
-4.  Download something                   that is it
+1.  turn on  Developer mode           top right of chrome://extensions
+2.  click  Load unpacked
+3.  choose the extension folder       the installer opens it in Explorer
 ```
 
-Works in Chrome, Edge, Brave and Chromium. Needs Windows 10 or 11. `Uninstall.bat` puts everything back.
+**Why that step is manual.** Chrome deliberately blocks installers from adding extensions. Sideloading through the registry has been disabled for off store extensions since Chrome 44, and the only ways around it are a Chrome Web Store listing or an enterprise policy that marks the whole browser as managed by an organisation. Neither belongs in a small tool like this, so the extension is loaded by hand, once.
+
+Uninstall from Add or remove programs, or run the setup again with `/uninstall`. There is a `/silent` switch for unattended installs. Your downloaded files are never touched.
+
+Prefer a plain folder? The zip in the same release has the exe, the extension and `Install.bat` with no installer involved. Windows 10 or 11.
 
 ## It stays out of your way
 

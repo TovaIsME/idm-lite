@@ -64,6 +64,41 @@ def build_clean():
     print("binary carries no local paths")
 
 
+def build_installer():
+    """Stage the payload, then build the single file setup exe around it.
+
+    The installer is its own crate precisely so that a plain `cargo build` at
+    the repo root never depends on a staged payload that may not exist yet.
+    """
+    payload = os.path.join(ROOT, "dist", "payload")
+    shutil.rmtree(payload, ignore_errors=True)
+    os.makedirs(payload)
+    shutil.copy2(EXE, payload)
+    shutil.copytree(os.path.join(ROOT, "extension"),
+                    os.path.join(payload, "extension"),
+                    ignore=shutil.ignore_patterns("*.pem"))
+
+    crate = os.path.join(ROOT, "installer")
+    cargo_home = os.environ.get("CARGO_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cargo")
+    env = dict(os.environ, CARGO_ENCODED_RUSTFLAGS="\x1f".join([
+        "--remap-path-prefix=%s=/cargo" % cargo_home,
+        "--remap-path-prefix=%s=/idm-lite" % ROOT,
+    ]))
+    env.pop("RUSTFLAGS", None)
+    print("building the installer...")
+    subprocess.run(["cargo", "build", "--release"], cwd=crate, env=env, check=True)
+
+    built = os.path.join(crate, "target", "release", "IDM-lite-Setup.exe")
+    with open(built, "rb") as f:
+        blob = f.read()
+    for leak in (cargo_home, ROOT, os.path.expanduser("~")):
+        if leak.encode("ascii", "ignore") in blob:
+            sys.exit("refusing to ship installer: %r is embedded in it" % leak)
+    shutil.copy2(built, os.path.join(ROOT, "dist", "IDM-lite-Setup-1.0.0.exe"))
+    print("installer carries no local paths")
+
+
 def main():
     build_clean()
     if not os.path.exists(EXE):
@@ -77,6 +112,8 @@ def main():
     for name, text in (("Install.bat", INSTALL), ("Uninstall.bat", UNINSTALL)):
         with open(os.path.join(DIST, name), "w") as f:
             f.write(text)
+
+    build_installer()
 
     version = "1.0.0"
     archive = os.path.join(ROOT, "dist", "IDM-lite-%s-windows-x64" % version)
