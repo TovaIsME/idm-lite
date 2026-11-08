@@ -55,7 +55,19 @@ async function handOff(url, { referrer = "", filename = "" } = {}) {
   }
 }
 
+/** A download Chrome is actually fetching right now, not a history row. */
+function isLive(item) {
+  // Chrome fires onCreated for EVERY row of the download history when it opens
+  // the downloads database -- which it does on browser startup. Those rows are
+  // old, finished downloads, and capturing them re-fetches the user's whole
+  // Downloads folder on every sign-in. Only take one that is running now.
+  if (item.state !== "in_progress") return false;
+  const age = Date.now() - Date.parse(item.startTime);
+  return !(age > 60000); // NaN (no startTime) counts as fresh
+}
+
 chrome.downloads.onCreated.addListener(async (item) => {
+  if (!isLive(item)) return;
   const url = item.finalUrl || item.url;
   // blob:/data: URLs exist only inside the page, so another process cannot
   // refetch them. Leave those to the browser.
