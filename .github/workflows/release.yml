@@ -18,6 +18,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# The default token is read-only; creating a release and attaching files to it
+# is a write.
+permissions:
+  contents: write
+
 jobs:
   # One job makes the release, so three packaging jobs cannot race to create it.
   open:
