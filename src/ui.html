@@ -434,6 +434,53 @@ body {
 
 /* -------------------------------------------------------------- drawer */
 
+#picker {
+  position: fixed;
+  z-index: 10;
+  left: 50%;
+  top: 50%;
+  width: min(640px, calc(100vw - 80px));
+  max-height: min(72vh, 580px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  background: var(--base);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -46%) scale(0.98);
+  transition: opacity 200ms var(--glide), transform 320ms var(--snap);
+}
+#picker.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+#picker header { display: flex; align-items: baseline; gap: 10px; padding: 18px 20px 12px; }
+#picker h2 { font-family: "IDM Display", system-ui, sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.005em; }
+#p-count { font-size: 12px; color: var(--ink-3); }
+#p-tools { display: flex; align-items: center; gap: 7px; padding: 0 20px 13px; border-bottom: 1px solid var(--hair-soft); }
+#p-take-wrap { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); }
+#p-n {
+  width: 72px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--hair);
+  border-radius: 5px;
+  background: #0e0e0f;
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  -webkit-user-select: text;
+  user-select: text;
+}
+#p-n:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+#p-list { flex: 1; overflow-y: auto; padding: 9px 13px; }
+.p-row { display: flex; align-items: center; gap: 11px; padding: 7px 8px; border-radius: 5px; cursor: pointer; }
+.p-row:hover { background: var(--raise); }
+.p-row input { flex: none; width: 15px; height: 15px; accent-color: var(--accent); }
+.p-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.p-name { font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.p-url { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#p-foot { display: flex; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--hair-soft); }
+
 #scrim {
   position: fixed;
   inset: 0;
@@ -604,6 +651,223 @@ body.maxed .grip { display: none; }
     transition-duration: 1ms !important;
   }
 }
+
+/* ------------------------------------------------------------- finishing
+   Added last so it wins on equal specificity. Everything here is surface:
+   depth, weight and motion. No layout is moved. */
+
+/* Light comes from above: a hairline catch along the top of every raised
+   surface, which is what stops flat dark panels reading as cardboard. */
+#titlebar { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045); }
+#toolbar { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025); }
+
+.tool, .icon-tool {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.tool:hover:not(:disabled), .icon-tool:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 4px 12px rgba(0, 0, 0, 0.38);
+}
+.tool:active:not(:disabled), .icon-tool:active:not(:disabled) {
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.4);
+  transition-duration: 70ms;
+}
+.tool.primary {
+  background: linear-gradient(177deg, #ff8f33 0%, var(--accent) 52%, #ef6a08 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.tool.primary:hover:not(:disabled) {
+  background: linear-gradient(177deg, #ffa052 0%, #ff8524 52%, #f5740f 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 6px 18px rgba(0, 0, 0, 0.46);
+}
+.tool:focus-visible, .icon-tool:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A row should feel like it lifts toward the cursor, not just change colour. */
+.row {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22);
+  transition: background 200ms var(--glide), border-color 200ms var(--glide),
+              box-shadow 260ms var(--snap), transform 260ms var(--snap);
+}
+.row:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34); }
+.row.selected { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+.row:active { transform: translateY(0) scale(0.998); transition-duration: 80ms; }
+
+/* The progress bar is the thing people actually watch, so it gets the care:
+   a lit edge, and a slow sheen that only moves while bytes do. */
+.track { box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45); overflow: hidden; }
+.fill {
+  background: linear-gradient(90deg, #f0700f 0%, var(--accent) 55%, #ffa054 100%);
+  transition: width 320ms var(--glide);
+}
+.row[data-status="downloading"] .fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.28) 50%, transparent 80%);
+  animation: sheen 1.9s linear infinite;
+}
+@keyframes sheen { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.row[data-status="done"] .fill { background: linear-gradient(90deg, #4c9159, var(--go)); box-shadow: none; }
+.row[data-status="error"] .fill { background: linear-gradient(90deg, #b8463e, var(--stop)); box-shadow: none; }
+
+/* Panels that arrive: a little depth and a little travel, never a pop. */
+#drawer { box-shadow: -28px 0 64px rgba(0, 0, 0, 0.62); }
+#picker { box-shadow: 0 32px 80px rgba(0, 0, 0, 0.66), inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+#picker header h2 { color: var(--ink); }
+.p-row { transition: background 160ms var(--glide), transform 200ms var(--snap); }
+.p-row:hover { transform: translateX(2px); }
+
+/* Nothing here should jitter for someone who asked the system to calm down. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .row:hover, .p-row:hover { transform: none; }
+}
+
+/* The segment view: one lane per connection, where it is in the file. */
+.track { height: 6px; }
+.segs { position: absolute; inset: 0; }
+.segs i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: inset 1px 0 0 rgba(10, 10, 11, 0.9);
+}
+.segs i:first-child { box-shadow: none; }
+.segs b {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms var(--glide);
+}
+.row[data-status="paused"] .segs b { background: #6c6963; }
+/* the aggregate stays underneath as a wash, so the bar still reads at a glance */
+.track.split .fill { opacity: 0.22; }
+
+/* A failure explains itself on its own line instead of in a clipped chip. */
+.why {
+  margin: 7px 0 0;
+  padding: 7px 10px;
+  border-left: 2px solid var(--stop);
+  border-radius: 0 4px 4px 0;
+  background: rgba(210, 84, 75, 0.09);
+  color: #e6a9a3;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.why[hidden] { display: none; }
+
+#p-note { font-size: 12px; color: var(--ink-2); max-width: 330px; line-height: 1.45; }
+#empty p b { color: var(--ink-2); font-weight: 600; }
+
+/* Toolbar buttons must never wrap their labels: at 1020px the row was
+   breaking "Add URL" over two lines and growing the bar. */
+.tool, .icon-tool { white-space: nowrap; flex: none; }
+#toolbar { flex-wrap: nowrap; overflow: hidden; }
+
+/* A failure with nothing downloaded has no progress to show; an empty bar
+   above the reason is just noise. */
+.row[data-status="error"] .track { display: none; }
+
+/* The rate graph is a glance, not a readout: calm it down so the row's
+   type stays the loudest thing in it. */
+.spark { opacity: 0.45; }
+.spark path { stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+.row[data-status="downloading"] .spark { opacity: 0.7; }
+
+/* --------------------------------------------------- glow and openings
+   Accent light, asked for by name. Kept to things that are actually live or
+   actually focused, so it reads as the app being lit rather than sprayed. */
+
+.tool.primary {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4),
+              0 0 16px rgba(255, 122, 26, 0.28);
+}
+.tool.primary:hover:not(:disabled) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36), 0 6px 18px rgba(0, 0, 0, 0.46),
+              0 0 26px rgba(255, 122, 26, 0.45);
+}
+.tool:focus-visible, .icon-tool:focus-visible {
+  box-shadow: 0 0 0 3px rgba(255, 122, 26, 0.3), 0 0 18px rgba(255, 122, 26, 0.35);
+}
+
+/* the bar glows only while bytes are moving, and fades when they stop */
+.row[data-status="downloading"] .fill,
+.row[data-status="downloading"] .segs b {
+  box-shadow: 0 0 10px rgba(255, 122, 26, 0.55);
+}
+.row[data-status="downloading"] .track {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 14px rgba(255, 122, 26, 0.16);
+}
+.row[data-status="done"] .fill { box-shadow: 0 0 10px rgba(90, 164, 105, 0.45); }
+.row.selected {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 122, 26, 0.35),
+              0 0 22px rgba(255, 122, 26, 0.16);
+}
+.row[data-status="downloading"] .chip { box-shadow: 0 0 14px rgba(255, 122, 26, 0.22); }
+#pulse { box-shadow: 0 0 10px rgba(255, 122, 26, 0.6); }
+
+/* Add URL: the bar does not just appear, it comes down and settles. */
+#composer > div { overflow: hidden; }
+#composer .inner, #composer form {
+  transform: translateY(-9px);
+  opacity: 0;
+  transition: transform 340ms var(--snap), opacity 240ms var(--glide);
+}
+#composer.open form { transform: none; opacity: 1; }
+#composer.open #url:focus {
+  box-shadow: 0 0 0 2px rgba(255, 122, 26, 0.3), 0 0 20px rgba(255, 122, 26, 0.25);
+}
+
+/* Settings: the panel slides, then its contents arrive behind it. */
+#drawer > * {
+  opacity: 0;
+  transform: translateX(14px);
+  transition: opacity 260ms var(--glide), transform 420ms var(--snap);
+}
+#drawer.open > * { opacity: 1; transform: none; }
+#drawer.open > *:nth-child(1) { transition-delay: 60ms; }
+#drawer.open > *:nth-child(2) { transition-delay: 100ms; }
+#drawer.open > *:nth-child(3) { transition-delay: 135ms; }
+#drawer.open > *:nth-child(4) { transition-delay: 170ms; }
+#drawer.open > *:nth-child(5) { transition-delay: 200ms; }
+#drawer.open > *:nth-child(n+6) { transition-delay: 225ms; }
+
+/* The picker's rows land one after another instead of all at once. */
+#picker.open .p-row { animation: land 340ms var(--snap) both; }
+.p-row:nth-child(1) { animation-delay: 20ms; }
+.p-row:nth-child(2) { animation-delay: 45ms; }
+.p-row:nth-child(3) { animation-delay: 70ms; }
+.p-row:nth-child(4) { animation-delay: 95ms; }
+.p-row:nth-child(5) { animation-delay: 120ms; }
+.p-row:nth-child(n+6) { animation-delay: 140ms; }
+@keyframes land { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+/* and the dimmed background deepens as it opens */
+#scrim { backdrop-filter: blur(0px); transition: opacity 280ms var(--glide), backdrop-filter 420ms var(--glide); }
+#scrim.open { backdrop-filter: blur(5px); }
+
+/* nothing to download: the glyph breathes rather than sits */
+#empty svg { animation: breathe 5.5s ease-in-out infinite; }
+@keyframes breathe {
+  0%, 100% { transform: translateY(0); opacity: 0.75; }
+  50% { transform: translateY(-5px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #composer form, #drawer > *, #picker.open .p-row, #empty svg {
+    transition: none !important;
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
 </style>
 </head>
 <body>
@@ -675,6 +939,9 @@ body.maxed .grip { display: none; }
       <button class="tool" id="t-resume" disabled><svg><use href="#i-play"/></svg>Resume</button>
       <button class="tool" id="t-remove" disabled><svg><use href="#i-trash"/></svg>Remove</button>
       <span class="spacer"></span>
+      <button class="tool" id="t-select-all" title="Select every download (Ctrl+A)"><svg><use href="#i-check"/></svg>Select all</button>
+      <button class="tool" id="t-clear" title="Remove finished and failed rows. Files you downloaded are kept"><svg><use href="#i-check"/></svg>Clear finished</button>
+      <span class="spacer"></span>
       <button class="icon-tool" id="t-folder" title="Open download folder"><svg><use href="#i-folder"/></svg></button>
       <button class="icon-tool" id="t-settings" title="Settings"><svg><use href="#i-gear"/></svg></button>
     </div>
@@ -683,7 +950,7 @@ body.maxed .grip { display: none; }
       <div>
         <form id="add-form">
           <input id="url" type="text" spellcheck="false" placeholder="Paste a link to download">
-          <button class="tool primary" type="submit">Download</button>
+          <button class="tool primary" id="add-go" type="submit">Download</button>
           <button class="tool" type="button" id="t-cancel">Cancel</button>
         </form>
       </div>
@@ -695,7 +962,7 @@ body.maxed .grip { display: none; }
     <div id="empty">
       <svg><use href="#i-empty"/></svg>
       <h1>Nothing downloading</h1>
-      <p>Start a download in your browser and it lands here automatically. Or paste a link with Add URL.</p>
+      <p>Start a download in your browser and it lands here by itself. Paste a link with <b>Add URL</b>, or click the <b>IDM-lite button in Chrome</b> and Scan a page to pull every file off it at once.</p>
     </div>
   </div>
 
@@ -740,10 +1007,33 @@ body.maxed .grip { display: none; }
     <button class="tool" id="s-close" style="justify-content:center">Close</button>
   </div>
   <div class="credit">
-    <span>IDM-lite 1.0 by <b>Tova</b></span>
+    <span>IDM-lite by <b>Tova</b></span>
     <button class="link" id="s-github" type="button">github.com/tovaisme</button>
   </div>
 </aside>
+
+<section id="picker" role="dialog" aria-label="Links found on that page">
+  <header>
+    <h2>One link, many files</h2>
+    <span id="p-count"></span>
+  </header>
+  <div id="p-tools">
+    <button class="tool" id="p-all" type="button">All</button>
+    <button class="tool" id="p-none" type="button">None</button>
+    <span class="spacer"></span>
+    <span id="p-take-wrap">
+      First <input id="p-n" type="number" min="1" value="1">
+      <button class="tool" id="p-take" type="button">Take</button>
+    </span>
+  </div>
+  <div id="p-list"></div>
+  <div id="p-foot">
+    <span id="p-note">Links a host only hands to a browser? Scan them from the IDM-lite button in Chrome instead.</span>
+    <span class="spacer"></span>
+    <button class="tool" id="p-cancel" type="button">Cancel</button>
+    <button class="tool primary" id="p-go" type="button">Download</button>
+  </div>
+</section>
 
 <div class="grip n" data-dir="n"></div><div class="grip s" data-dir="s"></div>
 <div class="grip w" data-dir="w"></div><div class="grip e" data-dir="e"></div>
@@ -779,6 +1069,7 @@ let landed = new Set();    // ids that already played the completion sweep
 let rows = new Map();      // id -> element
 let snapshot = [];
 let drawerOpen = false;
+let anchor = null;         // where a shift-click measures from
 
 function sparkline(samples) {
   if (samples.length < 2) return "";
@@ -805,12 +1096,23 @@ function build(job) {
       <span class="dot"></span>
       <span class="eta"></span>
       <span class="chip"><i></i><span class="chip-text"></span></span>
-    </div>`;
+    </div>
+    <p class="why"></p>`;
   el.addEventListener("click", (e) => {
-    if (e.ctrlKey || e.metaKey) {
+    const order = snapshot.map((j) => j.id);
+    if (e.shiftKey && anchor !== null && order.includes(anchor)) {
+      // click, then shift-click: everything between, the way a file list does it
+      const from = order.indexOf(anchor);
+      const to = order.indexOf(job.id);
+      const span = order.slice(Math.min(from, to), Math.max(from, to) + 1);
+      if (!(e.ctrlKey || e.metaKey)) selection = new Set();
+      span.forEach((id) => selection.add(id));
+    } else if (e.ctrlKey || e.metaKey) {
       selection.has(job.id) ? selection.delete(job.id) : selection.add(job.id);
+      anchor = job.id;
     } else {
       selection = new Set([job.id]);
+      anchor = job.id;
     }
     paintSelection();
   });
@@ -824,6 +1126,45 @@ function paintSelection() {
   $("#t-pause").disabled = !picked.some((j) => ["queued", "connecting", "downloading"].includes(j.status));
   $("#t-resume").disabled = !picked.some((j) => ["paused", "error"].includes(j.status));
   $("#t-remove").disabled = picked.length === 0;
+}
+
+/**
+ * The connections, drawn where they actually are in the file.
+ *
+ * This is the thing that makes a segmented downloader worth having, and the
+ * one picture a progress percentage cannot give you: sixteen workers spread
+ * across the file, the slow one visibly behind, a finished one's tail handed
+ * to somebody idle.
+ */
+function paintSegments(el, job) {
+  const track = el.querySelector(".track");
+  let segs = track.querySelector(".segs");
+  if (!job.spans || job.spans.length < 2) {
+    if (segs) segs.remove();
+    track.classList.remove("split");
+    return;
+  }
+  if (!segs) {
+    segs = document.createElement("span");
+    segs.className = "segs";
+    track.append(segs);
+  }
+  track.classList.add("split");
+  // reuse the elements: this runs five times a second
+  while (segs.children.length < job.spans.length) {
+    const lane = document.createElement("i");
+    lane.append(document.createElement("b"));
+    segs.append(lane);
+  }
+  while (segs.children.length > job.spans.length) segs.lastChild.remove();
+  job.spans.forEach(([from, at, to], k) => {
+    const lane = segs.children[k];
+    const width = Math.max(0, to - from);
+    lane.style.left = (from * 100).toFixed(3) + "%";
+    lane.style.width = (width * 100).toFixed(3) + "%";
+    lane.firstChild.style.width =
+      width > 0 ? Math.min(100, ((at - from) / width) * 100).toFixed(2) + "%" : "0%";
+  });
 }
 
 function update(el, job) {
@@ -855,10 +1196,15 @@ function update(el, job) {
   eta.textContent = left || "";
   el.querySelector(".dot").style.display = left ? "" : "none";
 
-  const text = el.querySelector(".chip-text");
-  text.textContent = job.status === "error" && job.error
-    ? `Failed · ${job.error.slice(0, 48)}`
-    : LABEL[job.status] || job.status;
+  el.querySelector(".chip-text").textContent = LABEL[job.status] || job.status;
+
+  // The reason is the useful part and it is a sentence, not a chip: give it a
+  // line of its own rather than cutting it off at 48 characters.
+  const why = el.querySelector(".why");
+  why.textContent = job.status === "error" ? job.error || "" : "";
+  why.hidden = !why.textContent;
+
+  paintSegments(el, job);
 
   if (job.status === "done" && !landed.has(job.id)) {
     landed.add(job.id);
@@ -869,6 +1215,7 @@ function update(el, job) {
 
 window.__state = (state) => {
   snapshot = state.jobs;
+  $("#t-clear").disabled = !state.jobs.some((j) => j.status === "done" || j.status === "error");
   const seen = new Set();
 
   state.jobs.forEach((job, i) => {
@@ -933,6 +1280,15 @@ const ids = () => [...selection];
 $("#t-pause").onclick = () => send({ cmd: "pause", ids: ids() });
 $("#t-resume").onclick = () => send({ cmd: "resume", ids: ids() });
 $("#t-remove").onclick = () => { send({ cmd: "remove", ids: ids() }); selection.clear(); };
+$("#t-select-all").onclick = () => {
+  selection = new Set(snapshot.map((j) => j.id));
+  paintSelection();
+};
+$("#t-clear").onclick = () => {
+  send({ cmd: "clear-finished" });
+  selection.clear();
+  paintSelection();
+};
 $("#t-folder").onclick = () => send({ cmd: "folder" });
 
 function openComposer(open) {
@@ -950,8 +1306,94 @@ $("#add-form").onsubmit = (e) => {
     setTimeout(() => ($("#url").style.borderColor = ""), 1100);
     return;
   }
-  send({ cmd: "add", url });
+  if (SCRAPE.looksLikeFile(url)) {
+    send({ cmd: "add", url });
+    openComposer(false);
+    return;
+  }
+  // the link names no file, so it is probably a page that lists some
+  setScanning(true);
+  send({ cmd: "scrape", url });
+};
+
+</script>
+<script src="scrape.js"></script>
+<script>
+
+// one link, many files: the picker
+let found = [];
+function openPicker(open) {
+  $("#picker").classList.toggle("open", open);
+  $("#scrim").classList.toggle("open", open || drawerOpen);
+}
+function paintCount() {
+  const n = found.filter((l) => l.on).length;
+  $("#p-count").textContent = found.length + " links found";
+  $("#p-go").textContent = n ? "Download " + n : "Download";
+  $("#p-go").disabled = !n;
+}
+function paintPicker() {
+  const list = $("#p-list");
+  list.textContent = "";
+  found.forEach((link) => {
+    const row = document.createElement("label");
+    row.className = "p-row";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = link.on;
+    box.onchange = () => { link.on = box.checked; paintCount(); };
+    const text = document.createElement("div");
+    text.className = "p-text";
+    const name = document.createElement("span");
+    name.className = "p-name";
+    // textContent, never innerHTML: this came off someone else's page
+    name.textContent = link.name || link.url;
+    const where = document.createElement("span");
+    where.className = "p-url";
+    where.textContent = link.url;
+    text.append(name, where);
+    row.append(box, text);
+    list.append(row);
+  });
+  paintCount();
+}
+$("#p-all").onclick = () => { found.forEach((l) => (l.on = true)); paintPicker(); };
+$("#p-none").onclick = () => { found.forEach((l) => (l.on = false)); paintPicker(); };
+$("#p-take").onclick = () => {
+  const n = Math.max(1, Math.min(found.length, Number($("#p-n").value) || 1));
+  found.forEach((l, i) => (l.on = i < n));
+  paintPicker();
+};
+$("#p-cancel").onclick = () => openPicker(false);
+$("#p-go").onclick = () => {
+  const urls = found.filter((l) => l.on).map((l) => ({ url: l.url, name: l.name }));
+  if (urls.length) send({ cmd: "add-many", urls: urls });
+  openPicker(false);
+};
+
+function setScanning(on) {
+  $("#add-go").disabled = on;
+  $("#add-go").textContent = on ? "Scanning\u2026" : "Download";
+}
+
+window.__scraped = async (result) => {
+  setScanning(false);
   openComposer(false);
+  let links = [];
+  if (!result.error && result.body) {
+    try { links = await SCRAPE.links(result.body, result.url); } catch { links = []; }
+  }
+  if (links.length < 2) {
+    send({ cmd: "add", url: result.url }); // nothing to pick from: fetch what was pasted
+    return;
+  }
+  // a web page is mostly navigation; the links that name files are the ones wanted
+  found = links.map((l) => ({ url: l.url, name: l.name, on: !!l.name || SCRAPE.looksLikeFile(l.url) }));
+  if (!found.some((l) => l.on)) found.forEach((l) => (l.on = true));
+  $("#p-n").value = String(found.length);
+  $("#p-n").max = String(found.length);
+  paintPicker();
+  openPicker(true);
 };
 
 // settings drawer
@@ -962,7 +1404,7 @@ function openDrawer(open) {
 }
 $("#t-settings").onclick = () => openDrawer(true);
 $("#s-close").onclick = () => openDrawer(false);
-$("#scrim").onclick = () => openDrawer(false);
+$("#scrim").onclick = () => { openDrawer(false); openPicker(false); };
 $("#s-pick").onclick = () => send({ cmd: "pick" });
 $("#s-github").onclick = () => send({ cmd: "link", url: "https://github.com/tovaisme" });
 $("#s-auto").onclick = (e) => {
@@ -981,7 +1423,7 @@ $("#s-save").onclick = () => {
 };
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { openComposer(false); openDrawer(false); }
+  if (e.key === "Escape") { openComposer(false); openDrawer(false); openPicker(false); }
   if (e.key === "Delete" && selection.size) { send({ cmd: "remove", ids: ids() }); selection.clear(); }
   if (e.ctrlKey && e.key.toLowerCase() === "n") { e.preventDefault(); openComposer(true); }
   if (e.ctrlKey && e.key.toLowerCase() === "a") {

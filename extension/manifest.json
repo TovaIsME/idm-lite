@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
   "name": "IDM-lite Integration",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Hands browser downloads to the IDM-lite download manager.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAszRm6cm3MbJD/xfG92gsYIzow7QJwtt/qTGletWXuFzYU1KL9xRnjvOIAqnDnBpeey+R+Rbq/I5HCMCrnPCGNTFMdkqGFfGCyR/rtQzzCVuAMusUXWbtWI2qkUrPbcVbd9DrFTuJgE6169u5bdIY0XxiETiePOG0ibl5cEGMmzvSGz62uoR8P8JSl05gtgcqYqwmDwSFVlRJhU85RLFjpA/Gd3johGRP0vLsMcm1eXJQkomMgKlPlvwO4lmPNxGkDho1KeLjU19p72IAm75Ihe6kN30cmWBoI+7zYs0eDwjrswJHOtNa3xiRCszYmBjVvueDfGGx3B333g8z1hbR/QIDAQAB",
   "background": { "service_worker": "background.js" },
-  "permissions": ["downloads", "nativeMessaging", "cookies", "contextMenus", "storage"],
+  "permissions": ["downloads", "nativeMessaging", "cookies", "contextMenus", "storage", "tabs", "scripting"],
   "host_permissions": ["<all_urls>"],
   "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
   "action": {
-    "default_title": "IDM-lite — click to toggle download capture",
+    "default_popup": "popup.html",
+    "default_title": "IDM-lite",
     "default_icon": { "16": "icon16.png", "48": "icon48.png" }
   }
 }

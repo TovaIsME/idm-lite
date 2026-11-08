@@ -1,0 +1,179 @@
+//! IDM-lite updater.
+//!
+//! Asks GitHub for the newest release and, when it is newer than this build,
+//! downloads that release's setup exe and runs it. The installer already stops
+//! a running copy before it replaces the files, so there is nothing to do here
+//! beyond handing it over.
+//!
+//!   update.exe            check, then install anything newer
+//!   update.exe --check    say what is available and stop
+
+use std::io::{Read, Write};
+
+const REPO: &str = "TovaIsME/idm-lite";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Version numbers, loosest possible reading: anything unparseable is a 0, so
+/// a tag nobody expected can never read as newer than what is installed.
+fn parts(tag: &str) -> Vec<u64> {
+    tag.trim()
+        .trim_start_matches(['v', 'V'])
+        .split(['.', '-', '+'])
+        .map(|p| p.parse().unwrap_or(0))
+        .collect()
+}
+
+fn newer(remote: &str, local: &str) -> bool {
+    parts(remote) > parts(local)
+}
+
+struct Release {
+    tag: String,
+    setup: Option<(String, String)>, // (file name, download url)
+    page: String,
+}
+
+fn latest() -> Result<Release, String> {
+    let agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(std::time::Duration::from_secs(20)))
+        .build();
+    let agent = ureq::Agent::new_with_config(agent);
+    let mut resp = agent
+        .get(&format!("https://api.github.com/repos/{}/releases/latest", REPO))
+        // GitHub refuses a request without one
+        .header("User-Agent", "IDM-lite-updater")
+        .header("Accept", "application/vnd.github+json")
+        .call()
+        .map_err(|e| e.to_string())?;
+    let code = resp.status().as_u16();
+    if !(200..300).contains(&code) {
+        return Err(format!("GitHub answered HTTP {}", code));
+    }
+    let body = resp.body_mut().read_to_string().map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let tag = json["tag_name"].as_str().unwrap_or_default().to_string();
+    if tag.is_empty() {
+        return Err("that release has no tag".into());
+    }
+    let setup = json["assets"]
+        .as_array()
+        .unwrap_or(&Vec::new())
+        .iter()
+        .find_map(|asset| {
+            let name = asset["name"].as_str()?;
+            let url = asset["browser_download_url"].as_str()?;
+            let is_setup = name.starts_with("IDM-lite-Setup") && name.ends_with(".exe");
+            is_setup.then(|| (name.to_string(), url.to_string()))
+        });
+    Ok(Release {
+        tag,
+        setup,
+        page: json["html_url"].as_str().unwrap_or_default().to_string(),
+    })
+}
+
+fn download(url: &str, name: &str) -> Result<std::path::PathBuf, String> {
+    let path = std::env::temp_dir().join(name);
+    let agent = ureq::Agent::new_with_defaults();
+    let resp = agent
+        .get(url)
+        .header("User-Agent", "IDM-lite-updater")
+        .call()
+        .map_err(|e| e.to_string())?;
+    let code = resp.status().as_u16();
+    if !(200..300).contains(&code) {
+        return Err(format!("the download answered HTTP {}", code));
+    }
+    let mut body = Vec::new();
+    resp.into_body()
+        .into_reader()
+        // an installer is a couple of megabytes; anything near this is wrong
+        .take(256 << 20)
+        .read_to_end(&mut body)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&path, &body).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
+fn pause() {
+    print!("\nPress Enter to close this window.");
+    let _ = std::io::stdout().flush();
+    let mut sink = String::new();
+    let _ = std::io::stdin().read_line(&mut sink);
+}
+
+fn main() {
+    let check_only = std::env::args().any(|a| a == "--check");
+    println!("IDM-lite {} -- checking for updates...\n", VERSION);
+
+    let release = match latest() {
+        Ok(r) => r,
+        Err(e) => {
+            println!("  could not reach GitHub: {}", e);
+            pause();
+            std::process::exit(1);
+        }
+    };
+
+    if !newer(&release.tag, VERSION) {
+        println!("  {} is the newest release. Nothing to do.", release.tag);
+        pause();
+        return;
+    }
+    println!("  {} is available.", release.tag);
+
+    let (name, url) = match release.setup {
+        Some(found) => found,
+        None => {
+            println!("  ...but it ships no setup exe. Get it here:\n  {}", release.page);
+            pause();
+            std::process::exit(1);
+        }
+    };
+
+    if check_only {
+        println!("  run update.exe without --check to install it.");
+        pause();
+        return;
+    }
+
+    println!("  downloading {} ...", name);
+    let installer = match download(&url, &name) {
+        Ok(path) => path,
+        Err(e) => {
+            println!("  download failed: {}", e);
+            pause();
+            std::process::exit(1);
+        }
+    };
+
+    println!("  starting the installer. It will close IDM-lite while it works.");
+    match std::process::Command::new(&installer).spawn() {
+        // the installer takes it from here, and it cannot replace our own exe
+        // while we are still holding the console open on top of it
+        Ok(_) => println!("  handed over to {}", installer.display()),
+        Err(e) => {
+            println!("  could not start the installer: {}", e);
+            println!("  it is saved here, run it yourself: {}", installer.display());
+            pause();
+            std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_higher_version_counts_as_newer() {
+        assert!(newer("v1.0.2", "1.0.1"));
+        assert!(newer("1.1.0", "1.0.9"));
+        assert!(newer("v1.0.10", "1.0.9")); // not a string comparison
+        assert!(!newer("v1.0.1", "1.0.1"));
+        assert!(!newer("v1.0.0", "1.0.1")); // a rolled-back release is not an update
+        // a tag in some shape we never agreed on must not trigger an install
+        assert!(!newer("nightly", "1.0.1"));
+        assert!(!newer("", "1.0.1"));
+    }
+}

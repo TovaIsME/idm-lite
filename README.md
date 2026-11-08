@@ -6,12 +6,14 @@
 
 Your browser fetches on one connection and gives up when it drops. IDM-lite splits the file across many connections, reconnects the ones that die, and hands you the finished thing.
 
-[![Download](https://img.shields.io/badge/Download-v1.0.1-ff7a1a?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/tovaisme/idm-lite/releases/latest)
+[![Download](https://img.shields.io/badge/Download-v1.0.2-ff7a1a?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/tovaisme/idm-lite/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-5aa469?style=for-the-badge)](LICENSE)
 [![Size](https://img.shields.io/badge/Single%20exe-1.9%20MB-444?style=for-the-badge)](https://github.com/tovaisme/idm-lite/releases/latest)
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-d2544b?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
 
-![IDM-lite downloading a file](docs/demo.gif)
+**[tovaisme.github.io/idm-lite](https://tovaisme.github.io/idm-lite/)**
+
+![IDM-lite downloading a file across sixteen connections](docs/app.png)
 
 </div>
 
@@ -29,7 +31,7 @@ A browser extension watches your downloads. The moment one starts, it hands the 
 
 ## Install
 
-Download **[IDM-lite-Setup-1.0.1.exe](https://github.com/tovaisme/idm-lite/releases/latest)** and run it. No admin rights needed, everything installs for your user only.
+Download **[IDM-lite-Setup-1.0.2.exe](https://github.com/tovaisme/idm-lite/releases/latest)** and run it. No admin rights needed, everything installs for your user only.
 
 The installer puts the app in `%LOCALAPPDATA%\Programs\IDM-lite`, registers it with Chrome, Edge, Brave and Chromium, adds a Start menu entry, lists itself in Add or remove programs, and starts the app in your tray.
 
@@ -47,9 +49,62 @@ Uninstall from Add or remove programs, or run the setup again with `/uninstall`.
 
 Prefer a plain folder? The zip in the same release has the exe, the extension and `Install.bat` with no installer involved. Windows 10 or 11.
 
+## One link, many files
+
+Paste a link that lists files rather than being one -- a mirror page, a folder index, an encrypted paste -- and IDM-lite reads it, shows you everything it found, and asks what to take.
+
+![The picker listing every file found behind one link](docs/picker.png)
+
+Tick what you want, take the first N, or take the lot. Links that name a file are ticked for you; the rest of a page's navigation is not.
+
+Pastes on [PrivateBin](https://privatebin.info) sites are read too. Those are encrypted in the browser, with the key in the part of the URL after `#` that is never sent to the server, so IDM-lite strips the key before fetching and decrypts the note locally in its own window. The server is never told what you are reading, and neither is anyone watching the connection.
+
+A link that already names a file (`.zip`, `.rar`, `.iso`, ...) is downloaded straight away, as before. Everything lands in your download folder from Settings -- IDM-lite never asks where to put a file.
+
+## When a link will not give up the file
+
+Some hosts answer anything that is not a browser with a check page instead of the file. IDM-lite cannot clear those -- that is the point of them -- so it does the next best thing, by itself:
+
+1. It tries the link directly, with the cookies, referer and user agent your browser would send.
+2. If the answer is a check, a sign-in or a refusal, it **does not take the download away from your browser**. The extension only cancels a browser download once the app has accepted it, so a refusal leaves the file downloading where it already was.
+3. Anything that still needs a browser can be handed to one: the extension opens the links in background tabs, a few at a time. A page that starts its own download gets captured into IDM-lite and its tab closes. A page that wants a click is left open, labelled, and the queue moves on.
+
+The row tells you which it was -- *blocked by a browser check*, *may want a sign-in*, *rate limiting us*, *that link is gone* -- instead of `HTTP 403`.
+
+## The extension popup
+
+<img src="docs/popup.png" alt="The extension popup working through a queue of links" width="42%" align="right">
+
+<kbd>Click the IDM-lite icon</kbd> for the browser side of it:
+
+- **Capture** on or off, without leaving the page.
+- **Scan** any page, paste or mirror link -- it starts filled in with the tab you are on.
+- The list of what it found, with **All / None** and **how many tabs at a time**.
+- **Start** works through them in the background. **Stop** halts it; tabs already open stay open.
+
+Queued pages open in a **minimized window of their own**, a few at a time, so nothing appears in front of what you are doing. A page that starts its own download is captured and its tab closes itself; one that needs a press gets pressed; one that needs you is left open and labelled.
+
+Close the popup whenever you like. The queue runs in the extension's worker, not in the popup, so it keeps going.
+
+<br clear="all">
+
+## Ads, and what gets pressed
+
+Scanning presses the download button on pages you are not looking at, and file hosts are full of fake ones planted by ads. The first time you scan, IDM-lite says so and asks you to accept that before it will do it.
+
+It is not only a warning. The clicker skips any control sitting under ad-shaped markup, ignores a link that leaves the site unless it plainly names a file, and only ever runs in the page's top frame, so the iframes ads usually live in are out of reach. Anything it is unsure about it leaves for you.
+
+None of that replaces an ad blocker. Run one.
+
+<img src="docs/consent.png" alt="The extension asking you to accept the ad-blocker notice before it will scan" width="42%">
+
+## Updating
+
+Run `update.exe` from the install folder. It asks GitHub for the newest release, and if there is one, downloads that installer and runs it. `update.exe --check` looks without installing.
+
 ## It stays out of your way
 
-<img src="docs/screenshot.png" alt="The main window" width="49%"> <img src="docs/settings.png" alt="Settings" width="49%">
+<img src="docs/settings.png" alt="Settings: download folder, connections per file, simultaneous downloads, start with Windows" width="68%">
 
 IDM-lite lives in the tray. Closing the window hides it and the downloads carry on. A captured download brings it back in about 36 ms, because the app is already running.
 
@@ -102,9 +157,12 @@ python tools/make_icons.py     # regenerate icon.ico and the extension PNGs
 ## Tests
 
 ```bash
-cargo test                                     # 17 tests
+cargo test                                     # 21 tests
 cargo test -- --ignored --nocapture            # the straggler benchmark
 python tests/smoke.py                          # end to end against the built exe
+node tests/capture_guard.mjs                   # the extension: capture guard and the tab queue
+node tests/scrape.mjs                          # reading links out of pages and encrypted pastes
+node tests/clicker.mjs                         # what gets pressed, and what is left alone
 ```
 
 The engine is tested against a real local HTTP server, not mocks: parallel integrity, resume offsets, rejecting stale resume data, servers with no range support, connections dropped mid transfer, slow slice takeover and filename collisions. `tests/smoke.py` drives the built exe the way a browser does, sending a real native messaging frame and checking the file, cookies, persistence and registration. It restores your own registration afterwards.
@@ -117,7 +175,11 @@ The engine is tested against a real local HTTP server, not mocks: parallel integ
 | `src/main.rs` | modes (app, host, register), config, state, loopback IPC |
 | `src/ui.rs` | frameless window plus WebView2, state push, command handling |
 | `src/ui.html` | the interface |
+| `src/bin/update.rs` | the updater: asks GitHub for a newer release and installs it |
 | `extension/` | the MV3 extension, with a pinned ID |
+| `extension/popup.*` | the browser-side UI: capture, scan, the queue |
+| `extension/scrape.js` | reading links out of a page or paste, shared with the window |
+| `docs/` | the site at [tovaisme.github.io/idm-lite](https://tovaisme.github.io/idm-lite/) |
 
 Settings and the download list live in `%LOCALAPPDATA%\IDM-lite`. Set `IDMLITE_DATA` to move them, which is how the tests stay out of your real state.
 

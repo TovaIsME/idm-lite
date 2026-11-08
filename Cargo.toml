@@ -1,12 +1,16 @@
 [package]
 name = "idm-lite"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 description = "Segmented download manager with browser capture"
 
 [[bin]]
 name = "IDM-lite"
 path = "src/main.rs"
+
+[[bin]]
+name = "update"
+path = "src/bin/update.rs"
 
 [dependencies]
 ureq = "3.5"

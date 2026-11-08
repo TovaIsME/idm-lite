@@ -20,6 +20,8 @@ use tray_icon::{Icon as TrayImage, MouseButton, MouseButtonState, TrayIconBuilde
 use wry::WebViewBuilder;
 
 const HTML: &str = include_str!("ui.html");
+/// Shared with the extension popup, which loads the same file from its folder.
+const SCRAPE_JS: &str = include_str!("../extension/scrape.js");
 const FONT_B64: &str = include_str!("../assets/display.b64");
 const TRAY_RGBA: &[u8] = include_bytes!("../assets/tray.rgba");
 const TRAY_PX: u32 = 32;
@@ -29,8 +31,23 @@ enum UserEvent {
     Command(String),
     Tick,
     Captured,
+    /// A scraped page, as JSON, on its way back to the picker.
+    Scraped(String),
     TrayOpen,
     TrayMenu(MenuId),
+}
+
+/// A link safe to hand to the shell as one argument.
+fn safe_link(url: &str) -> bool {
+    (url.starts_with("https://") || url.starts_with("http://"))
+        && !url.contains(char::is_whitespace)
+        && url.len() < 2000
+}
+
+/// Servers hand a plain client a challenge page or a 403; they hand a browser
+/// the file. We are fetching on a browser's behalf, so we say so.
+fn browser_ua() -> (String, String) {
+    ("User-Agent".to_string(), "Mozilla/5.0".to_string())
 }
 
 /// Bring the window back from the tray.
@@ -43,6 +60,9 @@ fn reveal(window: &Window) {
 #[derive(Serialize)]
 struct JobView {
     id: u64,
+    url: String,
+    /// One [from, reached, to] per connection, as fractions of the file.
+    spans: Vec<[f64; 3]>,
     name: String,
     total: u64,
     done: u64,
@@ -116,8 +136,24 @@ fn snapshot(app: &App, meter: &mut Meter, maximized: bool) -> StateView {
         } else {
             0.0
         };
+        // only while there is something to watch: a finished file is one bar
+        let spans = if downloading && total > 0 {
+            job.spans
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(start, pos, end)| {
+                    let scale = total as f64;
+                    [*start as f64 / scale, *pos as f64 / scale, (*end as f64 + 1.0) / scale]
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         views.push(JobView {
             id: job.id,
+            url: job.url.clone(),
+            spans,
             name: job.name.lock().unwrap().clone(),
             total,
             done,
@@ -178,8 +214,24 @@ pub fn run() {
         .expect("create window");
 
     let ipc_proxy = proxy.clone();
+    // Served over a custom protocol rather than with_html on purpose. with_html
+    // lands the page on about:blank, which is not a secure context, and there
+    // window.crypto.subtle does not exist -- the paste scraper needs it. A
+    // *.localhost origin is trustworthy to Chromium, so this one is secure.
+    let page = HTML.replace("{{FONT}}", FONT_B64.trim());
     let webview = WebViewBuilder::new()
-        .with_html(HTML.replace("{{FONT}}", FONT_B64.trim()))
+        .with_custom_protocol("idm".into(), move |_id, req| {
+            let (kind, body) = if req.uri().path().ends_with("scrape.js") {
+                ("text/javascript; charset=utf-8", SCRAPE_JS.as_bytes().to_vec())
+            } else {
+                ("text/html; charset=utf-8", page.clone().into_bytes())
+            };
+            wry::http::Response::builder()
+                .header("Content-Type", kind)
+                .body(std::borrow::Cow::Owned(body))
+                .expect("serve the page")
+        })
+        .with_url("idm://localhost/")
         .with_background_color((12, 13, 20, 255))
         .with_ipc_handler(move |request| {
             let _ = ipc_proxy.send_event(UserEvent::Command(request.into_body()));
@@ -264,6 +316,7 @@ pub fn run() {
         }
     });
 
+    let scrape_proxy = proxy.clone();
     let mut meter = Meter::default();
     let mut shown = false;
     let mut visible = false;
@@ -289,6 +342,9 @@ pub fn run() {
                 visible = false;
             }
             Event::UserEvent(UserEvent::Tick) => push(&mut meter, visible),
+            Event::UserEvent(UserEvent::Scraped(json)) => {
+                let _ = webview.evaluate_script(&format!("window.__scraped({})", json));
+            }
             Event::UserEvent(UserEvent::TrayOpen) => {
                 reveal(&window);
                 visible = true;
@@ -372,10 +428,34 @@ pub fn run() {
                     }
                     "add" => {
                         if let Some(url) = msg.get("url").and_then(|u| u.as_str()) {
-                            let ua = ("User-Agent".to_string(), "Mozilla/5.0".to_string());
-                            app.add(url.trim(), vec![ua], "");
+                            app.add(url.trim(), vec![browser_ua()], "");
                         }
                     }
+                    // one link, many files: fetch the page off the UI thread and
+                    // let the picker decide what to do with what is in it
+                    "scrape" => {
+                        if let Some(url) = msg.get("url").and_then(|u| u.as_str()) {
+                            let url = url.trim().to_string();
+                            let back = scrape_proxy.clone();
+                            std::thread::spawn(move || {
+                                let found = match crate::download::fetch_text(&url) {
+                                    Ok(body) => serde_json::json!({ "url": url, "body": body }),
+                                    Err(e) => serde_json::json!({ "url": url, "error": e }),
+                                };
+                                let _ = back.send_event(UserEvent::Scraped(found.to_string()));
+                            });
+                        }
+                    }
+                    "add-many" => {
+                        if let Some(list) = msg.get("urls").and_then(|v| v.as_array()) {
+                            for item in list {
+                                let url = item.get("url").and_then(|u| u.as_str()).unwrap_or("");
+                                let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                                app.add(url.trim(), vec![browser_ua()], name);
+                            }
+                        }
+                    }
+                    "clear-finished" => app.clear_finished(),
                     "pause" => ids.iter().for_each(|id| app.pause(*id)),
                     "resume" => ids.iter().for_each(|id| app.resume(*id)),
                     "remove" => {
@@ -404,12 +484,9 @@ pub fn run() {
                         }
                     }
                     "link" => {
-                        // only plain https, passed as one argument, never a shell string
+                        // one argument, never a shell string
                         if let Some(url) = msg.get("url").and_then(|u| u.as_str()) {
-                            let safe = url.starts_with("https://")
-                                && !url.contains(char::is_whitespace)
-                                && url.len() < 300;
-                            if safe {
+                            if safe_link(url) {
                                 let _ = std::process::Command::new("explorer").arg(url).spawn();
                             }
                         }

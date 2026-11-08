@@ -289,7 +289,8 @@ impl App {
             total: AtomicU64::new(0),
             done: AtomicU64::new(0),
             status: Mutex::new(Status::Queued),
-            stop: AtomicBool::new(false),
+            spans: Mutex::new(Vec::new()),
+        stop: AtomicBool::new(false),
             error: Mutex::new(String::new()),
             added: now_secs(),
         });
@@ -422,6 +423,23 @@ impl App {
         write_json(&data_file("downloads.json"), &recs);
     }
 
+    /// Drop finished rows from the list. The files they produced stay on disk:
+    /// this is the history being cleared, not the downloads being deleted.
+    pub fn clear_finished(&self) {
+        let mut jobs = self.jobs.lock().unwrap();
+        let mut taken = self.taken_paths.lock().unwrap();
+        jobs.retain(|job| {
+            let keep = job.status().active() || job.status() == Status::Paused;
+            if !keep {
+                taken.remove(&*job.path.lock().unwrap());
+            }
+            keep
+        });
+        drop(taken);
+        drop(jobs);
+        self.save();
+    }
+
     fn restore(&self) {
         let recs: Vec<JobRec> = read_json(&data_file("downloads.json")).unwrap_or_default();
         for rec in recs {
@@ -438,7 +456,8 @@ impl App {
                 total: AtomicU64::new(rec.total),
                 done: AtomicU64::new(rec.done),
                 status: Mutex::new(if was_active { Status::Queued } else { Status::parse(&rec.status) }),
-                stop: AtomicBool::new(false),
+                spans: Mutex::new(Vec::new()),
+        stop: AtomicBool::new(false),
                 error: Mutex::new(rec.error),
                 added: rec.added,
             });
@@ -528,6 +547,17 @@ pub fn serve_ipc(app: Arc<App>, wake: Box<dyn Fn() + Send>) -> std::io::Result<(
                 continue;
             }
             let mut stream = stream;
+            // Refuse anything we cannot fetch ourselves. The extension waits for
+            // this answer before it cancels the browser's download, so a refusal
+            // leaves the file with the browser -- which can clear a check we
+            // cannot -- instead of losing it to an error row here.
+            if !msg.job.url.is_empty() {
+                if let Err(why) = download::can_fetch(&msg.job.url, &msg.job.headers()) {
+                    eprintln!("idmlite: left to the browser -- {}", why);
+                    let _ = stream.write_all(b"no");
+                    continue;
+                }
+            }
             if !burst_ok(&mut window, Instant::now(), CAPTURES_PER_MINUTE) {
                 let _ = stream.write_all(b"no"); // answered, so the stub stops
                 continue;
@@ -603,6 +633,14 @@ fn launch_app() -> bool {
 
 // ------------------------------------------------------ native messaging
 
+/// One native-messaging frame: a little-endian length, then the JSON.
+fn reply(stdout: &std::io::Stdout, body: &str) -> std::io::Result<()> {
+    let mut out = stdout.lock();
+    out.write_all(&(body.len() as u32).to_le_bytes())?;
+    out.write_all(body.as_bytes())?;
+    out.flush()
+}
+
 fn host_mode() {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
@@ -620,18 +658,28 @@ fn host_mode() {
             return;
         }
         let job: serde_json::Value = serde_json::from_slice(&buf).unwrap_or(serde_json::Value::Null);
+
+        // A scan is just a fetch; it needs no app and starts none. The page
+        // goes back to the extension, which reads the links out of it.
+        if let Some(page) = job.get("scrape").and_then(|u| u.as_str()) {
+            let answer = match download::fetch_text(page) {
+                Ok(body) => serde_json::json!({ "scraped": page, "body": body }),
+                Err(e) => serde_json::json!({ "scraped": page, "error": e }),
+            };
+            if reply(&stdout, &answer.to_string()).is_err() {
+                return;
+            }
+            continue;
+        }
+
         let url = job.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
         let accepted = match ipc_send(&job, Duration::ZERO) {
             Some(answer) => answer,
             None => launch_app() && ipc_send(&job, Duration::from_secs(25)) == Some(true),
         };
 
-        let reply = serde_json::json!({ "accepted": accepted, "url": url }).to_string();
-        let mut out = stdout.lock();
-        if out.write_all(&(reply.len() as u32).to_le_bytes()).is_err()
-            || out.write_all(reply.as_bytes()).is_err()
-            || out.flush().is_err()
-        {
+        let answer = serde_json::json!({ "accepted": accepted, "url": url }).to_string();
+        if reply(&stdout, &answer).is_err() {
             return;
         }
     }
@@ -800,6 +848,34 @@ mod tests {
         assert!(!burst_ok(&mut window, t0 + Duration::from_secs(59), 3));
         // next minute, a real download is taken again
         assert!(burst_ok(&mut window, t0 + Duration::from_secs(60), 3));
+    }
+
+    #[test]
+    fn clearing_history_keeps_what_is_still_running() {
+        let dir = std::env::temp_dir().join(format!("idmlite-clear-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("IDMLITE_DATA", &dir);
+
+        let app = App::new();
+        let keep = app.add("http://h/live.bin", vec![], "live.bin").unwrap();
+        let gone = app.add("http://h/old.bin", vec![], "old.bin").unwrap();
+        let failed = app.add("http://h/bad.bin", vec![], "bad.bin").unwrap();
+        app.find(gone).unwrap().set_status(Status::Done);
+        app.find(failed).unwrap().set_status(Status::Error);
+        app.find(keep).unwrap().set_status(Status::Downloading);
+
+        app.clear_finished();
+
+        let left: Vec<u64> = app.jobs.lock().unwrap().iter().map(|j| j.id).collect();
+        assert_eq!(left, vec![keep], "finished and failed rows go, running ones stay");
+
+        // a paused download is unfinished business, not history
+        app.find(keep).unwrap().set_status(Status::Paused);
+        app.clear_finished();
+        assert_eq!(app.jobs.lock().unwrap().len(), 1, "a paused download is kept");
+
+        std::env::remove_var("IDMLITE_DATA");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

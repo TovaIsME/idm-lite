@@ -13,8 +13,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const APP_EXE: &[u8] = include_bytes!("../../dist/payload/IDM-lite.exe");
+const UPDATE_EXE: &[u8] = include_bytes!("../../dist/payload/update.exe");
 const EXT_MANIFEST: &[u8] = include_bytes!("../../dist/payload/extension/manifest.json");
 const EXT_BACKGROUND: &[u8] = include_bytes!("../../dist/payload/extension/background.js");
+const EXT_SCRAPE: &[u8] = include_bytes!("../../dist/payload/extension/scrape.js");
+const EXT_POPUP_HTML: &[u8] = include_bytes!("../../dist/payload/extension/popup.html");
+const EXT_POPUP_JS: &[u8] = include_bytes!("../../dist/payload/extension/popup.js");
 const EXT_ICON16: &[u8] = include_bytes!("../../dist/payload/extension/icon16.png");
 const EXT_ICON48: &[u8] = include_bytes!("../../dist/payload/extension/icon48.png");
 const EXT_ICON128: &[u8] = include_bytes!("../../dist/payload/extension/icon128.png");
@@ -118,10 +122,14 @@ fn install(quiet: bool) {
 
     stop_running();
 
-    let files: [(PathBuf, &[u8]); 6] = [
+    let files: [(PathBuf, &[u8]); 10] = [
         (exe.clone(), APP_EXE),
+        (root.join("update.exe"), UPDATE_EXE),
         (ext.join("manifest.json"), EXT_MANIFEST),
         (ext.join("background.js"), EXT_BACKGROUND),
+        (ext.join("scrape.js"), EXT_SCRAPE),
+        (ext.join("popup.html"), EXT_POPUP_HTML),
+        (ext.join("popup.js"), EXT_POPUP_JS),
         (ext.join("icon16.png"), EXT_ICON16),
         (ext.join("icon48.png"), EXT_ICON48),
         (ext.join("icon128.png"), EXT_ICON128),
@@ -134,7 +142,7 @@ fn install(quiet: bool) {
             std::process::exit(1);
         }
     }
-    say("1/5", "copied the app and the extension");
+    say("1/5", "copied the app, the updater and the extension");
 
     // keep a copy of this installer so Add/Remove Programs can call it back
     if let Ok(me) = std::env::current_exe() {
@@ -233,6 +241,7 @@ fn uninstall(quiet: bool) {
 
     // Remove what is certainly not in use first.
     let _ = std::fs::remove_file(root.join("IDM-lite.exe"));
+    let _ = std::fs::remove_file(root.join("update.exe"));
     let _ = std::fs::remove_dir_all(root.join("extension"));
     // When launched from Add/Remove Programs this very exe sits inside the
     // folder, so the folder itself has to go after the process exits.

@@ -60,6 +60,9 @@ pub struct Job {
     pub total: AtomicU64, // 0 = unknown
     pub done: AtomicU64,
     pub status: Mutex<Status>,
+    /// What each connection is holding right now, as (start, reached, end)
+    /// byte offsets. Published for the window to draw; nothing reads it back.
+    pub spans: Mutex<Vec<(u64, u64, u64)>>,
     pub stop: AtomicBool,
     pub error: Mutex<String>,
     pub added: u64,
@@ -179,6 +182,119 @@ fn get(
     req.call().map_err(|e| e.to_string())
 }
 
+/// Fetch a URL as text so the page can look for links in it.
+///
+/// Bounded on purpose: someone will paste a link to a 4 GB ISO, and reading
+/// that into a String to hunt for `href` would be a fresh way to hang the
+/// machine. 2 MiB covers any real page or paste.
+pub fn fetch_text(url: &str) -> Result<String, String> {
+    const LIMIT: u64 = 2 << 20;
+    // Everything after '#' stays here. On a PrivateBin link that fragment is
+    // the decryption key, and sending it to the server would hand over the
+    // very secret the format exists to keep from it.
+    let bare = url.split('#').next().unwrap_or(url);
+    let ag = agent();
+    let resp = ag
+        .get(bare)
+        .header("User-Agent", "Mozilla/5.0")
+        .header("Accept", "text/html,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.1")
+        // PrivateBin answers this with the paste JSON; every other server
+        // treats it as the ordinary XHR hint it looks like.
+        .header("X-Requested-With", "JSONHttpRequest")
+        .call()
+        .map_err(|e| e.to_string())?;
+    let code = resp.status().as_u16();
+    if !(200..300).contains(&code) {
+        return Err(refusal(code, |n| header(&resp, n)));
+    }
+    let kind = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !(kind.is_empty()
+        || kind.starts_with("text/")
+        || kind.contains("json")
+        || kind.contains("xml"))
+    {
+        let short = kind.split(';').next().unwrap_or("").to_string();
+        return Err(format!("that link is a {} file, not a page", short));
+    }
+    let mut raw = Vec::new();
+    resp.into_body()
+        .into_reader()
+        .take(LIMIT)
+        .read_to_end(&mut raw)
+        .map_err(|e| e.to_string())?;
+    // a page in some 8-bit encoding is still worth scraping for links
+    Ok(String::from_utf8_lossy(&raw).into_owned())
+}
+
+fn header(resp: &ureq::http::Response<ureq::Body>, name: &str) -> String {
+    resp.headers()
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+/// Why a server said no, in words that say what to do about it.
+///
+/// "HTTP 403" tells nobody anything. Most refusals a download manager meets
+/// are one of a handful of situations, and each has a different answer.
+fn refusal(code: u16, head: impl Fn(&str) -> String) -> String {
+    // Cloudflare and friends answer a plain client with an interstitial that
+    // only a real browser can clear. No header is spoofable into passing it,
+    // and the cookie it issues is bound to the browser that earned it.
+    let challenged = !head("cf-mitigated").is_empty()
+        || (matches!(code, 403 | 503 | 429)
+            && (head("server").contains("cloudflare") || !head("cf-ray").is_empty()));
+    if challenged {
+        return "blocked by a browser check. Use the IDM-lite button in your \
+                browser and Scan this link there -- it opens the page out of \
+                sight, presses the download itself, and the file lands back here"
+            .to_string();
+    }
+    match code {
+        401 | 403 => format!(
+            "the server refused this link (HTTP {}). It may want a sign-in, or it only \
+             serves the file to the page that links to it -- try Scan from the \
+             IDM-lite button in your browser instead",
+            code
+        ),
+        404 | 410 => format!("that link is gone (HTTP {})", code),
+        429 => "the server is rate limiting us (HTTP 429). Fewer connections per file \
+                in Settings may get through"
+            .to_string(),
+        500..=599 => format!("the server is having trouble (HTTP {})", code),
+        _ => format!("HTTP {}", code),
+    }
+}
+
+/// Could we actually fetch this ourselves? One range request for one byte.
+///
+/// The extension cancels the browser's own download only once we accept it, so
+/// accepting something we cannot fetch trades a download that was working for
+/// an error row. Checking first costs one tiny request per capture.
+pub fn can_fetch(url: &str, headers: &[(String, String)]) -> Result<(), String> {
+    let config = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(6)))
+        // the browser is waiting on this answer: give up early and let it keep
+        // the download rather than stall the click the user just made
+        .timeout_global(Some(Duration::from_secs(12)))
+        .http_status_as_error(false)
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+    let resp = get(&agent, url, headers, Some((0, Some(0))))?;
+    let code = resp.status().as_u16();
+    if (200..300).contains(&code) || code == 416 {
+        Ok(())
+    } else {
+        Err(refusal(code, |n| header(&resp, n)))
+    }
+}
+
 /// Returns (total size or 0 if unknown, server honours ranges, suggested name).
 pub fn probe(url: &str, headers: &[(String, String)]) -> Result<(u64, bool, String), String> {
     let ag = agent();
@@ -188,7 +304,7 @@ pub fn probe(url: &str, headers: &[(String, String)]) -> Result<(u64, bool, Stri
     }
     let code = resp.status().as_u16();
     if !(200..300).contains(&code) {
-        return Err(format!("HTTP {}", code));
+        return Err(refusal(code, |n| header(&resp, n)));
     }
     let head = |n: &str| {
         resp.headers()
@@ -526,8 +642,21 @@ pub fn download(
         // this thread watches progress while the workers run
         let mut flushed = Instant::now();
         loop {
-            let got: u64 = registry.lock().unwrap().iter().map(|p| p.fetched()).sum();
+            let (got, live) = {
+                let pieces = registry.lock().unwrap();
+                (
+                    pieces.iter().map(|p| p.fetched()).sum::<u64>(),
+                    pieces
+                        .iter()
+                        .map(|p| {
+                            let s = p.span();
+                            (s.start, s.pos, s.end)
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            };
             job.done.store(got, Ordering::Relaxed);
+            *job.spans.lock().unwrap() = live;
             if finished.load(Ordering::Acquire) >= crew {
                 break;
             }
@@ -674,7 +803,8 @@ mod tests {
             total: AtomicU64::new(0),
             done: AtomicU64::new(0),
             status: Mutex::new(Status::Queued),
-            stop: AtomicBool::new(false),
+            spans: Mutex::new(Vec::new()),
+        stop: AtomicBool::new(false),
             error: Mutex::new(String::new()),
             added: 0,
         }
@@ -767,6 +897,34 @@ mod tests {
         let job = job_for(&url);
         assert_eq!(download(&url, &dest, &[], 8, &job, None), Ok(true));
         assert_eq!(std::fs::read(&dest).unwrap(), data);
+    }
+
+    #[test]
+    fn a_refusal_says_what_to_do_about_it() {
+        let none = |_: &str| String::new();
+        let cloudflare = |n: &str| match n {
+            "server" => "cloudflare".to_string(),
+            "cf-ray" => "8f2c1d4e0000-ams".to_string(),
+            _ => String::new(),
+        };
+
+        // a bot check is the one refusal the browser can clear and we cannot
+        for code in [403, 503, 429] {
+            assert!(refusal(code, cloudflare).contains("browser"),
+                "HTTP {} from a challenge must point at the browser", code);
+        }
+        assert!(refusal(403, |n: &str| if n == "cf-mitigated" { "challenge".into() } else { String::new() })
+            .contains("browser"));
+
+        // the same codes without the fingerprint are ordinary refusals
+        assert!(!refusal(403, none).contains("browser check"));
+        assert!(refusal(403, none).contains("sign-in"));
+        assert!(refusal(429, none).contains("Settings"));
+        assert!(refusal(404, none).contains("gone"));
+        assert!(refusal(500, none).contains("trouble"));
+        assert!(refusal(418, none).contains("418"));
+        // a 200 is never a refusal, but if one ever reaches here, say nothing clever
+        assert_eq!(refusal(200, none), "HTTP 200");
     }
 
     #[test]

@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IDM-lite — a download manager that finishes the file</title>
+<meta name="description" content="A 1.9 MB Windows download manager. Splits a file across 16 connections, resumes exactly where it stopped, and pulls every file off a page from one link.">
+<meta property="og:title" content="IDM-lite">
+<meta property="og:description" content="A download manager for Windows that actually finishes the file.">
+<meta property="og:image" content="app.png">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23ff7a1a'/><path d='M16 7v12m0 0 5-5m-5 5-5-5M8 24h16' stroke='%23140b03' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --void: #0a0a0b;
+  --base: #121213;
+  --raise: #191919;
+  --raise-2: #212122;
+  --hair: #2b2b2d;
+  --hair-soft: #1f1f21;
+  --ink: #e8e6e3;
+  --ink-2: #a09d98;
+  --ink-3: #6b6864;
+  --accent: #ff7a1a;
+  --accent-soft: rgba(255, 122, 26, 0.16);
+  --go: #5aa469;
+  --stop: #d2544b;
+  --snap: cubic-bezier(0.16, 1, 0.3, 1);
+  --glide: cubic-bezier(0.33, 1, 0.68, 1);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--void);
+  color: var(--ink);
+  font: 16px/1.65 Archivo, system-ui, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+a { color: inherit; }
+.wrap { width: min(1080px, calc(100% - 48px)); margin: 0 auto; }
+
+/* ---------------------------------------------------------------- chrome */
+nav {
+  position: sticky; top: 0; z-index: 10;
+  backdrop-filter: blur(14px);
+  background: rgba(10, 10, 11, 0.72);
+  border-bottom: 1px solid transparent;
+  transition: border-color 300ms var(--glide), background 300ms var(--glide);
+}
+nav.stuck { border-bottom-color: var(--hair-soft); background: rgba(10, 10, 11, 0.88); }
+nav .wrap { display: flex; align-items: center; gap: 14px; height: 62px; }
+.mark { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -0.02em; }
+.mark span { width: 26px; height: 26px; border-radius: 7px; background: var(--accent);
+  display: grid; place-items: center; box-shadow: 0 0 18px rgba(255, 122, 26, 0.45); }
+.mark svg { width: 15px; height: 15px; }
+nav .links { margin-left: auto; display: flex; gap: 22px; align-items: center; }
+nav .links a { color: var(--ink-2); text-decoration: none; font-size: 14.5px; font-weight: 500;
+  transition: color 180ms var(--glide); }
+nav .links a:hover { color: var(--ink); }
+@media (max-width: 720px) { nav .links a.hide-sm { display: none; } }
+
+/* ----------------------------------------------------------------- hero */
+header.hero { position: relative; padding: 92px 0 74px; overflow: hidden; }
+header.hero::before {
+  content: ""; position: absolute; left: 50%; top: -340px; width: 1100px; height: 620px;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, rgba(255, 122, 26, 0.16), transparent 72%);
+  pointer-events: none;
+}
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 6px 13px; border: 1px solid var(--hair); border-radius: 100px;
+  background: var(--raise); color: var(--ink-2);
+  font-size: 13px; font-weight: 500;
+}
+.eyebrow b { color: var(--accent); font-weight: 700; }
+h1 {
+  margin: 22px 0 0; max-width: 16ch;
+  font-size: clamp(42px, 7vw, 76px); font-weight: 800; line-height: 1.02; letter-spacing: -0.035em;
+}
+h1 em { font-style: normal; color: var(--accent); }
+.lede { margin-top: 20px; max-width: 56ch; font-size: clamp(16.5px, 2vw, 19px); color: var(--ink-2); }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  height: 48px; padding: 0 22px; border-radius: 8px;
+  border: 1px solid var(--hair); background: var(--raise);
+  color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px;
+  transition: transform 220ms var(--snap), box-shadow 220ms var(--glide),
+              background 220ms var(--glide), border-color 220ms var(--glide);
+}
+.btn svg { width: 17px; height: 17px; }
+.btn:hover { transform: translateY(-2px); background: var(--raise-2);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5); }
+.btn.primary {
+  border-color: #a04d12; color: #170c02;
+  background: linear-gradient(177deg, #ff8f33, var(--accent) 55%, #ef6a08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), 0 0 24px rgba(255, 122, 26, 0.32);
+}
+.btn.primary:hover { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 36px rgba(255, 122, 26, 0.5); }
+.meta { margin-top: 15px; font-size: 14px; color: var(--ink-2); }
+
+/* the segmented bar, which is the whole idea of the thing, moving */
+.lanes {
+  margin-top: 46px; height: 12px; border-radius: 3px; overflow: hidden;
+  background: #212122; display: flex; gap: 2px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6), 0 0 26px rgba(255, 122, 26, 0.12);
+}
+.lanes i { flex: 1; position: relative; overflow: hidden; background: #171718; }
+.lanes i::after {
+  content: ""; position: absolute; inset: 0; transform-origin: left;
+  background: linear-gradient(90deg, #f0700f, var(--accent));
+  box-shadow: 0 0 10px rgba(255, 122, 26, 0.6);
+  /* each lane sits at its own position and creeps forward from there, so the
+     bar reads as sixteen connections mid-file even in a still */
+  transform: scaleX(var(--p, 0.6));
+  animation: creep 3.6s ease-in-out infinite alternate;
+}
+@keyframes creep {
+  from { transform: scaleX(var(--p, 0.6)); }
+  to { transform: scaleX(calc(var(--p, 0.6) + 0.07)); }
+}
+.lanes-note { margin-top: 11px; font-size: 14px; color: var(--ink-2); }
+
+/* -------------------------------------------------------------- sections */
+section { padding: 78px 0; }
+section.alt { background: linear-gradient(180deg, transparent, var(--base) 12%, var(--base) 88%, transparent); }
+h2 { font-size: clamp(27px, 3.6vw, 38px); font-weight: 700; letter-spacing: -0.028em; line-height: 1.12; }
+h2 + p.sub { margin-top: 13px; max-width: 62ch; color: var(--ink-2); font-size: 16.5px; }
+
+.grid { display: grid; gap: 15px; margin-top: 40px; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+.card {
+  padding: 22px; border: 1px solid var(--hair-soft); border-radius: 11px;
+  background: var(--base);
+  transition: transform 300ms var(--snap), border-color 300ms var(--glide), box-shadow 300ms var(--glide);
+}
+.card:hover { transform: translateY(-3px); border-color: var(--hair);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45); }
+.card .ico {
+  width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); margin-bottom: 14px;
+}
+.card .ico svg { width: 18px; height: 18px; }
+.card h3 { font-size: 16.5px; font-weight: 650; letter-spacing: -0.01em; }
+.card p { margin-top: 7px; font-size: 14.5px; color: var(--ink-2); line-height: 1.6; }
+
+/* ------------------------------------------------------------- the shots */
+.shot {
+  margin-top: 40px; border: 1px solid var(--hair); border-radius: 13px; overflow: hidden;
+  background: var(--base); box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+}
+.shot img { display: block; width: 100%; height: auto; }
+.split { display: grid; gap: 34px; grid-template-columns: 1.15fr 0.85fr; align-items: center; margin-top: 44px; }
+@media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+.split .shot { margin-top: 0; }
+.split img { display: block; width: 100%; border-radius: 12px; border: 1px solid var(--hair); }
+ul.ticks { margin-top: 18px; list-style: none; display: grid; gap: 11px; }
+ul.ticks li { display: flex; gap: 11px; font-size: 15px; color: var(--ink-2); line-height: 1.55; }
+ul.ticks svg { width: 17px; height: 17px; color: var(--accent); flex: none; margin-top: 3px; }
+ul.ticks b { color: var(--ink); font-weight: 600; }
+
+/* ------------------------------------------------------------- the steps */
+.steps { counter-reset: s; display: grid; gap: 13px; margin-top: 38px; }
+.step {
+  display: flex; gap: 16px; padding: 19px 21px;
+  border: 1px solid var(--hair-soft); border-radius: 11px; background: var(--base);
+}
+.step::before {
+  counter-increment: s; content: counter(s);
+  width: 29px; height: 29px; flex: none; border-radius: 8px;
+  display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 14px;
+}
+.step h3 { font-size: 15.5px; font-weight: 650; }
+.step p { margin-top: 5px; font-size: 14.5px; color: var(--ink-2); }
+code {
+  padding: 2px 7px; border-radius: 5px; background: var(--raise-2);
+  border: 1px solid var(--hair-soft); font-family: ui-monospace, Consolas, monospace; font-size: 13px;
+}
+
+.note {
+  margin-top: 36px; padding: 18px 21px; border-left: 2px solid var(--accent);
+  border-radius: 0 10px 10px 0; background: rgba(255, 122, 26, 0.06);
+  font-size: 14.5px; color: var(--ink-2); line-height: 1.6;
+}
+.note b { color: var(--ink); }
+
+footer { padding: 46px 0 60px; border-top: 1px solid var(--hair-soft); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  font-size: 14.5px; color: var(--ink-2); }
+footer a { color: var(--ink-2); text-decoration: none; }
+footer a:hover { color: var(--accent); }
+footer .sp { margin-left: auto; }
+
+/* --------------------------------------------------------------- motion */
+.rise { opacity: 0; transform: translateY(18px); transition: opacity 620ms var(--glide), transform 760ms var(--snap); }
+.rise.in { opacity: 1; transform: none; }
+.rise.d1 { transition-delay: 70ms; } .rise.d2 { transition-delay: 140ms; }
+.rise.d3 { transition-delay: 210ms; } .rise.d4 { transition-delay: 280ms; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .rise { opacity: 1; transform: none; transition: none; }
+  .lanes i::after { animation: none; }
+  .btn:hover, .card:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="mark" href="#top" style="text-decoration:none">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="#140b03" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 20h14"/></svg></span>
+      IDM-lite
+    </a>
+    <div class="links">
+      <a href="#how" class="hide-sm">How it works</a>
+      <a href="#links" class="hide-sm">One link, many files</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/tovaisme/idm-lite">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div class="eyebrow rise">Windows 10 &amp; 11 · <b>1.9 MB</b> · no runtime</div>
+    <h1 class="rise d1">The download manager that <em>finishes the file.</em></h1>
+    <p class="lede rise d2">Your browser fetches on one connection and gives up when it drops. IDM-lite splits the file across sixteen, hands a stalled connection's work to an idle one, and resumes exactly where it stopped.</p>
+    <div class="cta rise d3">
+      <a class="btn primary" href="https://github.com/tovaisme/idm-lite/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 20h14"/></svg>
+        Download for Windows
+      </a>
+      <a class="btn" href="https://github.com/tovaisme/idm-lite">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48l-.01-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85l-.01 2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
+        Source
+      </a>
+    </div>
+    <p class="meta rise d3">Installer or portable zip · installs for your user only, no admin rights · MIT</p>
+
+    <div class="lanes rise d4" aria-hidden="true"></div>
+    <p class="lanes-note rise d4">Sixteen connections on one file. The short ones are stealing work from the long ones.</p>
+  </div>
+</header>
+
+<section class="alt" id="how">
+  <div class="wrap">
+    <h2 class="rise">Most of the speed is in what happens when a connection is slow.</h2>
+    <p class="sub rise d1">Split a file into eight equal pieces and the slowest one decides when you finish, while seven sit idle at the end. IDM-lite re-splits instead: a connection that runs out of work takes the back half of whoever has the most left, again and again, down to 512 KiB.</p>
+
+    <div class="grid">
+      <div class="card rise">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div>
+        <h3>Sixteen connections</h3>
+        <p>Up to 32 per file, 16 by default. The window draws one lane per connection, where it actually is in the file.</p>
+      </div>
+      <div class="card rise d1">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg></div>
+        <h3>Resume, exactly</h3>
+        <p>Every slice's position is flushed to a sidecar as it goes. Close the app, lose the power, come back and it picks up where it stopped.</p>
+      </div>
+      <div class="card rise d2">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2M4 7h16v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Zm8 4v6m0 0 3-3m-3 3-3-3"/></svg></div>
+        <h3>Catches your browser's downloads</h3>
+        <p>The extension hands over the URL with your cookies, referer and user agent, so a download that needs your session still works — at full speed.</p>
+      </div>
+      <div class="card rise">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></div>
+        <h3>One link, many files</h3>
+        <p>Paste a mirror page, a folder index or an encrypted paste. It reads every file out of it and asks which ones you want.</p>
+      </div>
+      <div class="card rise d1">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v6m0 0 3-3m-3 3L9 6"/><path d="M5 13h14l-1.5 7h-11L5 13Z"/></svg></div>
+        <h3>It never asks where to save</h3>
+        <p>Everything lands in the folder you picked in Settings. No dialog per file, ever.</p>
+      </div>
+      <div class="card rise d2">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0-9-9"/><path d="M3 3v6h6"/><path d="M12 8v5l3 2"/></svg></div>
+        <h3>Updates itself</h3>
+        <p><code>update.exe</code> asks GitHub for the newest release and runs the installer for you. No telemetry, no background checks.</p>
+      </div>
+    </div>
+
+    <div class="shot rise"><img src="app.png" alt="The IDM-lite window: one download in progress with sixteen connection lanes, one finished, one failed with an explanation, one paused" loading="lazy"></div>
+
+    <div class="split">
+      <div class="rise">
+        <h3 style="font-size:19px;font-weight:650;letter-spacing:-0.015em">Everything lands where you said.</h3>
+        <p style="margin-top:11px;color:var(--ink-2);font-size:15px;line-height:1.65">One folder, set once. Connections per file, how many downloads at a time, and whether it starts with Windows — that is the whole of Settings. It lives in the tray, so a captured download opens the window in about 36 ms instead of paying for a cold start.</p>
+      </div>
+      <div class="shot rise d1"><img src="settings.png" alt="The settings drawer" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<section id="links">
+  <div class="wrap">
+    <h2 class="rise">One link that points at fifty files.</h2>
+    <p class="sub rise d1">A repack is split across dozens of mirror links on one page. Paste that page — IDM-lite reads every link out of it, names each file, and lets you take all of them, the first ten, or exactly the ones you tick.</p>
+
+    <div class="split">
+      <div class="shot rise d1"><img src="picker.png" alt="The picker listing fourteen files found behind a single link" loading="lazy"></div>
+      <div class="rise d2">
+        <ul class="ticks">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9 17.5 20 6.5"/></svg><span><b>Encrypted pastes too.</b> PrivateBin keeps its key in the part of the URL after the <code>#</code> that never reaches the server. IDM-lite strips it before fetching and decrypts in its own window, so the host never learns what you opened.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9 17.5 20 6.5"/></svg><span><b>Out of sight.</b> Queued pages open in a minimized window of their own, a few at a time. Nothing appears in front of what you are doing.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9 17.5 20 6.5"/></svg><span><b>It presses the button.</b> Hosts that only release the file after a click get clicked — generically, never with per-site scripts. Whatever starts downloading is captured and finished at full speed.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 9 17.5 20 6.5"/></svg><span><b>Stop whenever.</b> One button halts the queue; tabs already open stay open.</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="shot rise"><img src="popup.png" alt="The extension popup working through a queue of links" loading="lazy"></div>
+      <div class="rise d1">
+        <h3 style="font-size:19px;font-weight:650;letter-spacing:-0.015em">The browser half of it.</h3>
+        <p style="margin-top:11px;color:var(--ink-2);font-size:15px;line-height:1.65">Capture on or off, a scan box that starts filled in with the tab you are on, the list of what it found, how many tabs to work through at a time, and a Stop that means stop. Close the popup whenever you like — the queue runs in the extension's worker, not in the popup.</p>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="rise">
+        <h3 style="font-size:19px;font-weight:650;letter-spacing:-0.015em">Ads are the risk, so it says so first.</h3>
+        <p style="margin-top:11px;color:var(--ink-2);font-size:15px;line-height:1.65">Pressing a download button on a page you are not looking at is exactly where a fake one planted by an ad would catch you. The first scan asks you to accept that, and the clicker skips anything sitting under ad markup, ignores off-site links that are not plainly files, and never reaches into a page's iframes.</p>
+        <p style="margin-top:11px;color:var(--ink-2);font-size:15px;line-height:1.65">None of that replaces an ad blocker. Run one.</p>
+      </div>
+      <div class="shot rise d1"><img src="consent.png" alt="The extension asking you to accept the ad-blocker notice before scanning" loading="lazy"></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="install">
+  <div class="wrap">
+    <h2 class="rise">Three steps, no admin rights.</h2>
+    <div class="steps">
+      <div class="step rise"><div><h3>Run the installer</h3><p>It installs to <code>%LOCALAPPDATA%\Programs\IDM-lite</code> for your user only, registers with Chrome, Edge, Brave and Chromium, and starts in your tray. Prefer a folder you control? Take the zip and run <code>Install.bat</code>.</p></div></div>
+      <div class="step rise d1"><div><h3>Load the extension</h3><p>Open <code>chrome://extensions</code>, switch on Developer mode, click Load unpacked and choose the <code>extension</code> folder the installer opens for you.</p></div></div>
+      <div class="step rise d2"><div><h3>Download something</h3><p>That is it. Anything your browser starts lands in IDM-lite. Click the toolbar button to scan a page for everything on it.</p></div></div>
+    </div>
+
+    <div class="note rise">
+      <b>Why step two is manual.</b> Chrome has blocked installers from adding extensions since version 44. The only ways around it are a Web Store listing or an enterprise policy that marks the whole browser as managed. Neither belongs in a tool this small, so the extension is loaded by hand, once.
+    </div>
+
+    <div class="cta rise" style="margin-top:34px">
+      <a class="btn primary" href="https://github.com/tovaisme/idm-lite/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 20h14"/></svg>
+        Get the latest release
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>IDM-lite — built by <a href="https://github.com/tovaisme">Tova</a></span>
+    <span class="sp"><a href="https://github.com/tovaisme/idm-lite">Source</a> · <a href="https://github.com/tovaisme/idm-lite/releases">Releases</a> · MIT</span>
+  </div>
+</footer>
+
+<script>
+// sixteen lanes, each pulling at its own pace, the way the engine behaves
+const lanes = document.querySelector(".lanes");
+for (let i = 0; i < 16; i++) {
+  const lane = document.createElement("i");
+  // spread out like real slices: some nearly done, some just claimed
+  lane.style.setProperty("--p", (0.34 + ((i * 7) % 11) * 0.058).toFixed(3));
+  lane.style.animationDelay = ((i % 8) * 0.17).toFixed(2) + "s";
+  lane.style.setProperty("animation-duration", (3 + ((i * 5) % 6) * 0.35).toFixed(2) + "s");
+  lanes.append(lane);
+}
+
+// reveal on the way past, once each
+const seen = new IntersectionObserver((entries) => {
+  entries.forEach((entry) => {
+    if (!entry.isIntersecting) return;
+    entry.target.classList.add("in");
+    seen.unobserve(entry.target);
+  });
+}, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+document.querySelectorAll(".rise").forEach((el) => seen.observe(el));
+
+// the bar under the nav only appears once you have left the top
+const bar = document.querySelector("nav");
+const onScroll = () => bar.classList.toggle("stuck", window.scrollY > 12);
+addEventListener("scroll", onScroll, { passive: true });
+onScroll();
+</script>
+</body>
+</html>

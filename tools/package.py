@@ -9,6 +9,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(ROOT, "target", "release", "IDM-lite.exe")
+UPDATER = os.path.join(ROOT, "target", "release", "update.exe")
 DIST = os.path.join(ROOT, "dist", "IDM-lite")
 
 
@@ -34,6 +35,8 @@ echo    3^) click "Load unpacked" and choose this folder:
 echo         %~dp0extension
 echo.
 echo Then start IDM-lite.exe, or just download something.
+echo.
+echo To update later, run update.exe from this folder.
 pause
 """
 
@@ -65,12 +68,14 @@ def build_clean():
     print("building with remapped paths...")
     subprocess.run(["cargo", "build", "--release"], cwd=ROOT, env=env, check=True)
 
-    with open(EXE, "rb") as f:
-        blob = f.read()
-    for leak in (cargo_home, ROOT, os.path.expanduser("~")):
-        if leak.encode("ascii", "ignore") in blob:
-            sys.exit("refusing to package: %r is still embedded in the exe" % leak)
-    print("binary carries no local paths")
+    for built in (EXE, UPDATER):
+        with open(built, "rb") as f:
+            blob = f.read()
+        for leak in (cargo_home, ROOT, os.path.expanduser("~")):
+            if leak.encode("ascii", "ignore") in blob:
+                sys.exit("refusing to package: %r is embedded in %s"
+                         % (leak, os.path.basename(built)))
+    print("binaries carry no local paths")
 
 
 def build_installer():
@@ -83,6 +88,7 @@ def build_installer():
     shutil.rmtree(payload, ignore_errors=True)
     os.makedirs(payload)
     shutil.copy2(EXE, payload)
+    shutil.copy2(UPDATER, payload)
     shutil.copytree(os.path.join(ROOT, "extension"),
                     os.path.join(payload, "extension"),
                     ignore=shutil.ignore_patterns("*.pem"))
@@ -117,6 +123,7 @@ def main():
         shutil.rmtree(DIST)
     os.makedirs(DIST)
     shutil.copy2(EXE, DIST)
+    shutil.copy2(UPDATER, DIST)
     shutil.copytree(os.path.join(ROOT, "extension"), os.path.join(DIST, "extension"),
                     ignore=shutil.ignore_patterns("*.pem"))
     for name, text in (("Install.bat", INSTALL), ("Uninstall.bat", UNINSTALL)):
