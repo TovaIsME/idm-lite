@@ -31,11 +31,26 @@ A browser extension watches your downloads. The moment one starts, it hands the 
 
 ## Install
 
-Download **[IDM-lite-Setup-1.0.4.exe](https://github.com/tovaisme/idm-lite/releases/latest)** and run it. No admin rights needed, everything installs for your user only.
+| You have | Take | Installs to |
+|---|---|---|
+| Windows 10 or 11 | `IDM-lite-Setup-1.0.4.exe` | `%LOCALAPPDATA%\Programs\IDM-lite` |
+| macOS 10.15+ | `IDM-lite-1.0.4.dmg`, drag to Applications | `/Applications` |
+| Debian, Ubuntu, Mint | `idm-lite_1.0.4_amd64.deb` via `sudo apt install ./...` | `/usr/bin`, `/usr/share/idm-lite` |
+| Any other Linux | `idm-lite-1.0.4-linux-x86_64.tar.gz`, run `install.sh` | `~/.local` |
 
-The installer puts the app in `%LOCALAPPDATA%\Programs\IDM-lite`, registers it with Chrome, Edge, Brave and Chromium, adds a Start menu entry, lists itself in Add or remove programs, and starts the app in your tray.
+All from **[the latest release](https://github.com/tovaisme/idm-lite/releases/latest)**. No admin rights anywhere: the Windows installer and the Linux tarball install for your user only.
 
-Then it opens the Extensions page for the one step it is not allowed to do for you:
+Each one registers with Chrome, Edge, Brave and Chromium and adds itself where that platform expects: Add or remove programs on Windows, Applications on macOS, a `.desktop` entry on Linux.
+
+Then there is the one step no installer is allowed to do for you. Open `chrome://extensions`, switch on Developer mode, click Load unpacked, and choose:
+
+| Platform | Extension folder |
+|---|---|
+| Windows | `%LOCALAPPDATA%\Programs\IDM-lite\extension` |
+| macOS | `IDM-lite.app/Contents/Resources/extension` |
+| Linux (tarball) | `~/.local/share/idm-lite/extension` |
+| Linux (.deb) | `/usr/share/idm-lite/extension` |
+
 
 ```
 1.  turn on  Developer mode           top right of chrome://extensions
@@ -47,7 +62,11 @@ Then it opens the Extensions page for the one step it is not allowed to do for y
 
 Uninstall from Add or remove programs, or run the setup again with `/uninstall`. There is a `/silent` switch for unattended installs. Your downloaded files are never touched.
 
-Prefer a plain folder? The zip in the same release has the exe, the extension and `Install.bat` with no installer involved. Windows 10 or 11.
+**macOS will warn you the app is from an unidentified developer.** It is not notarized, which needs an Apple Developer account. Right-click it and choose Open the first time; macOS remembers after that.
+
+### What runs where
+
+The window is the same on all three -- WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux -- and so is the engine, the capture path and the extension. Scanning pages and reading encrypted pastes needs `crypto.subtle`, which needs a secure context, so CI asks each engine on every push rather than assuming; all three say yes. With no display at all, over SSH or on a server, it runs the engine without a window instead of failing to make one.
 
 ## One link, many files
 

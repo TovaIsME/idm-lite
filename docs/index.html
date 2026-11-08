@@ -208,6 +208,21 @@ footer .sp { margin-left: auto; }
   .lanes i::after { animation: none; }
   .btn:hover, .card:hover { transform: none; }
 }
+
+/* the three ways in */
+.platforms { display: grid; gap: 15px; margin-top: 34px; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) { .platforms { grid-template-columns: 1fr; } }
+.plat {
+  padding: 21px; border: 1px solid var(--hair-soft); border-radius: 11px;
+  background: var(--base); border-top: 2px solid var(--accent);
+}
+.plat h3 { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+.plat p { margin-top: 9px; font-size: 14.5px; color: var(--ink-2); line-height: 1.6; }
+.plat p.where { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--hair-soft);
+  font-size: 13px; color: var(--ink-3); }
+.plat p.where code { font-size: 12px; }
+a.plain { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--hair); }
+a.plain:hover { color: var(--accent); border-bottom-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -221,6 +236,7 @@ footer .sp { margin-left: auto; }
     <div class="links">
       <a href="#how" class="hide-sm">How it works</a>
       <a href="#links" class="hide-sm">One link, many files</a>
+      <a href="#platforms" class="hide-sm">Platforms</a>
       <a href="#install">Install</a>
       <a href="#defender" class="hide-sm">Defender</a>
       <a href="https://github.com/tovaisme/idm-lite">GitHub</a>
@@ -230,20 +246,25 @@ footer .sp { margin-left: auto; }
 
 <header class="hero" id="top">
   <div class="wrap">
-    <div class="eyebrow rise">Windows 10 &amp; 11 · <b>1.9 MB</b> · no runtime</div>
+    <div class="eyebrow rise">Windows · macOS · Linux — <b>1.9 MB</b>, no runtime</div>
     <h1 class="rise d1">The download manager that <em>finishes the file.</em></h1>
     <p class="lede rise d2">Your browser fetches on one connection and gives up when it drops. IDM-lite splits the file across sixteen, hands a stalled connection's work to an idle one, and resumes exactly where it stopped.</p>
     <div class="cta rise d3">
-      <a class="btn primary" href="https://github.com/tovaisme/idm-lite/releases/latest">
+      <a class="btn primary" href="#install">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0 4.5-4.5M12 15l-4.5-4.5M5 20h14"/></svg>
-        Download for Windows
+        Download
       </a>
       <a class="btn" href="https://github.com/tovaisme/idm-lite">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48l-.01-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85l-.01 2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
         Source
       </a>
     </div>
-    <p class="meta rise d3">Installer or portable zip · installs for your user only, no admin rights · MIT</p>
+    <p class="meta rise d3">
+      <a class="plain" href="https://github.com/tovaisme/idm-lite/releases/latest">Windows installer</a> ·
+      <a class="plain" href="https://github.com/tovaisme/idm-lite/releases/latest">macOS disk image</a> ·
+      <a class="plain" href="https://github.com/tovaisme/idm-lite/releases/latest">Linux .deb or tarball</a><br>
+      Installs for your user only, no admin rights. MIT.
+    </p>
 
     <div class="lanes rise d4" aria-hidden="true"></div>
     <p class="lanes-note rise d4">Sixteen connections on one file. The short ones are stealing work from the long ones.</p>
@@ -333,14 +354,36 @@ footer .sp { margin-left: auto; }
 <section class="alt" id="install">
   <div class="wrap">
     <h2 class="rise">Three steps, no admin rights.</h2>
+    <p class="sub rise d1">Same program on all three. Pick the file for your machine, load the extension once, and you are done.</p>
+
+    <div class="platforms rise d1">
+      <div class="plat">
+        <h3>Windows 10 &amp; 11</h3>
+        <p><code>IDM-lite-Setup-1.0.4.exe</code></p>
+        <p>Installs to <code>%LOCALAPPDATA%\Programs\IDM-lite</code> for your user only. The zip is the same thing in a folder you control, with <code>Install.bat</code>.</p>
+        <p class="where">extension lives at<br><code>%LOCALAPPDATA%\Programs\IDM-lite\extension</code></p>
+      </div>
+      <div class="plat">
+        <h3>macOS 10.15+</h3>
+        <p><code>IDM-lite-1.0.4.dmg</code></p>
+        <p>Open it and drag IDM-lite to Applications. The first launch needs a right-click → Open, because the app is not notarized yet.</p>
+        <p class="where">extension lives at<br><code>IDM-lite.app/Contents/Resources/extension</code></p>
+      </div>
+      <div class="plat">
+        <h3>Linux</h3>
+        <p><code>idm-lite_1.0.4_amd64.deb</code></p>
+        <p><code>sudo apt install ./idm-lite_1.0.4_amd64.deb</code>. On anything else take the tarball and run <code>install.sh</code>, which installs under <code>~/.local</code> and needs no root.</p>
+        <p class="where">extension lives at<br><code>~/.local/share/idm-lite/extension</code></p>
+      </div>
+    </div>
+
     <div class="steps">
-      <div class="step rise"><div><h3>Run the installer</h3><p>It installs to <code>%LOCALAPPDATA%\Programs\IDM-lite</code> for your user only, registers with Chrome, Edge, Brave and Chromium, and starts in your tray. Prefer a folder you control? Take the zip and run <code>Install.bat</code>.</p></div></div>
-      <div class="step rise d1"><div><h3>Load the extension</h3><p>Open <code>chrome://extensions</code>, switch on Developer mode, click Load unpacked and choose the <code>extension</code> folder the installer opens for you.</p></div></div>
-      <div class="step rise d2"><div><h3>Download something</h3><p>That is it. Anything your browser starts lands in IDM-lite. Click the toolbar button to scan a page for everything on it.</p></div></div>
+      <div class="step rise"><div><h3>Load the extension</h3><p>Open <code>chrome://extensions</code>, switch on Developer mode, click Load unpacked, and choose the folder above for your platform.</p></div></div>
+      <div class="step rise d1"><div><h3>Download something</h3><p>That is it. Anything your browser starts lands in IDM-lite. Click the toolbar button to scan a page for everything on it.</p></div></div>
     </div>
 
     <div class="note rise">
-      <b>Why step two is manual.</b> Chrome has blocked installers from adding extensions since version 44. The only ways around it are a Web Store listing or an enterprise policy that marks the whole browser as managed. Neither belongs in a tool this small, so the extension is loaded by hand, once.
+      <b>Why loading it is manual.</b> Chrome has blocked installers from adding extensions since version 44. The only ways around it are a Web Store listing or an enterprise policy that marks the whole browser as managed. Neither belongs in a tool this small, so the extension is loaded by hand, once.
     </div>
 
     <div class="cta rise" style="margin-top:34px">
@@ -349,6 +392,30 @@ footer .sp { margin-left: auto; }
         Get the latest release
       </a>
     </div>
+  </div>
+</section>
+
+<section id="platforms">
+  <div class="wrap">
+    <h2 class="rise">One program, three platforms.</h2>
+    <p class="sub rise d1">Almost nothing in it was really Windows. State goes to <code>%LOCALAPPDATA%</code>, <code>~/Library/Application Support</code> or <code>$XDG_DATA_HOME</code>. The single-instance lock is an unshared handle on Windows and an <code>flock</code> elsewhere, both released by the kernel if the process dies. Registering with a browser writes registry values on Windows and drops the same manifest into a directory everywhere else, which is the simpler half.</p>
+
+    <div class="grid">
+      <div class="card rise">
+        <div class="top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v12H4z"/><path d="M9 21h6"/></svg><h3>The same window</h3></div>
+        <p>WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux. One page, one design, drawn by whichever engine is already on the machine.</p>
+      </div>
+      <div class="card rise d1">
+        <div class="top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg><h3>Scanning works everywhere</h3></div>
+        <p>Reading an encrypted paste needs <code>crypto.subtle</code>, which needs a secure context. CI asks each engine on every push instead of assuming. All three say yes.</p>
+      </div>
+      <div class="card rise d2">
+        <div class="top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17h16M7 13h10M10 9h4"/></svg><h3>No display, no problem</h3></div>
+        <p>Over SSH or on a server it runs the engine without a window rather than failing to make one. The browser extension still hands downloads over.</p>
+      </div>
+    </div>
+
+    <div class="note rise"><b>macOS will warn you the app is from an unidentified developer.</b> It is not notarized, which needs an Apple Developer account. Right-click the app and choose Open the first time, and macOS remembers.</div>
   </div>
 </section>
 
