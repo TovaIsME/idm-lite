@@ -214,12 +214,14 @@ footer .sp { margin-left: auto; }
 @media (max-width: 900px) { .platforms { grid-template-columns: 1fr; } }
 .plat {
   padding: 21px; border: 1px solid var(--hair-soft); border-radius: 11px;
-  background: var(--base); border-top: 2px solid var(--accent);
+  background: var(--base);
 }
-.plat h3 { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+/* the platform's name carries the accent; a 2px bar across the top of a
+   rounded card just fights the corners */
+.plat h3 { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; color: var(--accent); }
 .plat p { margin-top: 9px; font-size: 14.5px; color: var(--ink-2); line-height: 1.6; }
 .plat p.where { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--hair-soft);
-  font-size: 13px; color: var(--ink-3); }
+  font-size: 13px; color: var(--ink-2); }
 .plat p.where code { font-size: 12px; }
 a.plain { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--hair); }
 a.plain:hover { color: var(--accent); border-bottom-color: var(--accent); }
