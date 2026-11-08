@@ -1,0 +1,62 @@
+name: build
+
+# The window is Windows-only; the engine, the native messaging host and
+# registration are not. This is what keeps that true: every push compiles and
+# tests all three platforms, so a Windows-ism cannot quietly creep back in.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: Build
+        run: cargo build --release --bin IDM-lite --bin update
+
+      - name: Test
+        run: cargo test --release
+
+      - name: The binary runs and knows what it is
+        shell: bash
+        run: |
+          # --unregister touches nothing that does not exist yet, so it is a
+          # safe way to prove the thing starts and takes an argument.
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            ./target/release/IDM-lite.exe --unregister
+            ./target/release/update.exe --check < /dev/null
+          else
+            ./target/release/IDM-lite --unregister
+            ./target/release/update --check < /dev/null
+          fi
+
+  extension:
+    name: extension and scraper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tests/capture_guard.mjs
+      - run: node tests/scrape.mjs
+      - run: node tests/clicker.mjs

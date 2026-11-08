@@ -8,9 +8,12 @@
 //! The app owns its own process. The browser host mode is a thin forwarder that
 //! hands each captured download to the running app over loopback, starting it
 //! first if it is not up, so downloads outlive the browser.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod download;
+#[cfg(not(windows))]
+mod headless;
+#[cfg(windows)]
 mod ui;
 
 use download::{Job, Status};
@@ -28,6 +31,11 @@ pub const HOST_NAME: &str = "com.idmlite.host";
 /// Pinned by the "key" field in extension/manifest.json.
 pub const EXT_ID: &str = "ffmenbaflpdmmlfigjodjcnajmlgndgl";
 
+/// Where each browser looks for a native messaging host.
+///
+/// Windows keeps a registry value pointing at a manifest; everyone else reads
+/// the manifest straight out of a directory, which is less to go wrong.
+#[cfg(windows)]
 pub const BROWSER_KEYS: [&str; 4] = [
     r"Software\Google\Chrome\NativeMessagingHosts",
     r"Software\Microsoft\Edge\NativeMessagingHosts",
@@ -35,16 +43,53 @@ pub const BROWSER_KEYS: [&str; 4] = [
     r"Software\Chromium\NativeMessagingHosts",
 ];
 
+#[cfg(target_os = "macos")]
+pub const BROWSER_DIRS: [&str; 4] = [
+    "Library/Application Support/Google/Chrome/NativeMessagingHosts",
+    "Library/Application Support/Microsoft Edge/NativeMessagingHosts",
+    "Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts",
+    "Library/Application Support/Chromium/NativeMessagingHosts",
+];
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub const BROWSER_DIRS: [&str; 4] = [
+    ".config/google-chrome/NativeMessagingHosts",
+    ".config/microsoft-edge/NativeMessagingHosts",
+    ".config/BraveSoftware/Brave-Browser/NativeMessagingHosts",
+    ".config/chromium/NativeMessagingHosts",
+];
+
+#[cfg(unix)]
+fn home() -> PathBuf {
+    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."))
+}
+
 // ------------------------------------------------------------------- paths
 
 pub fn data_dir() -> PathBuf {
     if let Some(d) = std::env::var_os("IDMLITE_DATA") {
         return PathBuf::from(d);
     }
-    let base = std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join(APP_NAME)
+    #[cfg(windows)]
+    {
+        let base = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        base.join(APP_NAME)
+    }
+    // ~/Library/Application Support on macOS, $XDG_DATA_HOME or ~/.local/share
+    // elsewhere: the conventions each platform's own tools expect.
+    #[cfg(target_os = "macos")]
+    {
+        home().join("Library/Application Support").join(APP_NAME)
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home().join(".local/share"))
+            .join(APP_NAME.to_lowercase())
+    }
 }
 
 pub fn data_file(name: &str) -> PathBuf {
@@ -609,6 +654,7 @@ fn ipc_send(job: &serde_json::Value, wait: Duration) -> Option<bool> {
 /// Without it, a burst of captures makes every host stub spawn its own app
 /// (they all race past the ipc.json check before any instance has written
 /// it), and N copies of the download engine run at once.
+#[cfg(windows)]
 fn instance_lock() -> Option<std::fs::File> {
     use std::os::windows::fs::OpenOptionsExt;
     let path = data_file("instance.lock");
@@ -618,17 +664,44 @@ fn instance_lock() -> Option<std::fs::File> {
     std::fs::OpenOptions::new().write(true).create(true).share_mode(0).open(path).ok()
 }
 
+/// Same guarantee, different mechanism: an advisory flock the kernel drops
+/// when the process dies, so a crash cannot strand it either.
+#[cfg(unix)]
+fn instance_lock() -> Option<std::fs::File> {
+    use std::os::unix::io::AsRawFd;
+    let path = data_file("instance.lock");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let file = std::fs::OpenOptions::new().write(true).create(true).open(path).ok()?;
+    let held = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0;
+    held.then_some(file)
+}
+
 fn launch_app() -> bool {
-    use std::os::windows::process::CommandExt;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    std::process::Command::new(exe_path())
-        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+    let mut command = std::process::Command::new(exe_path());
+    command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .is_ok()
+        .stderr(std::process::Stdio::null());
+    // detach, so the app outlives the browser that started it
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        // its own session: closing the browser's terminal must not take it
+        command.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    command.spawn().is_ok()
 }
 
 // ------------------------------------------------------ native messaging
@@ -691,21 +764,25 @@ fn host_manifest_path() -> PathBuf {
     data_file(&format!("{}.json", HOST_NAME))
 }
 
+/// The native messaging manifest every browser reads, whatever it is called
+/// and wherever it has to live.
+fn host_manifest() -> serde_json::Value {
+    serde_json::json!({
+        "name": HOST_NAME,
+        "description": format!("{} downloader", APP_NAME),
+        "path": exe_path().to_string_lossy(),
+        "type": "stdio",
+        "allowed_origins": [format!("chrome-extension://{}/", EXT_ID)],
+    })
+}
+
+#[cfg(windows)]
 pub fn register() -> Vec<String> {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
     let manifest = host_manifest_path();
-    write_json(
-        &manifest,
-        &serde_json::json!({
-            "name": HOST_NAME,
-            "description": format!("{} downloader", APP_NAME),
-            "path": exe_path().to_string_lossy(),
-            "type": "stdio",
-            "allowed_origins": [format!("chrome-extension://{}/", EXT_ID)],
-        }),
-    );
+    write_json(&manifest, &host_manifest());
     let manifest_str = manifest.to_string_lossy().into_owned();
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let mut done = Vec::new();
@@ -720,6 +797,7 @@ pub fn register() -> Vec<String> {
     done
 }
 
+#[cfg(windows)]
 pub fn unregister() {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
@@ -730,10 +808,67 @@ pub fn unregister() {
     let _ = std::fs::remove_file(host_manifest_path());
 }
 
+// ------------------------------------------------- registration, elsewhere
+//
+// No registry to write: each browser reads the manifest out of a directory
+// under the user's profile, so registering is dropping a file in each one.
+
+#[cfg(unix)]
+fn browser_manifests() -> Vec<PathBuf> {
+    BROWSER_DIRS
+        .iter()
+        .map(|dir| home().join(dir).join(format!("{}.json", HOST_NAME)))
+        .collect()
+}
+
+#[cfg(unix)]
+pub fn register() -> Vec<String> {
+    let manifest = host_manifest();
+    let mut done = Vec::new();
+    for path in browser_manifests() {
+        if let Some(parent) = path.parent() {
+            if std::fs::create_dir_all(parent).is_err() {
+                continue;
+            }
+        }
+        write_json(&path, &manifest);
+        if path.exists() {
+            let name = path
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "browser".to_string());
+            done.push(name);
+        }
+    }
+    done
+}
+
+#[cfg(unix)]
+pub fn unregister() {
+    for path in browser_manifests() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+#[cfg(unix)]
+pub fn is_registered() -> bool {
+    let want = exe_path().to_string_lossy().into_owned();
+    browser_manifests().into_iter().any(|path| {
+        read_json::<serde_json::Value>(&path)
+            .and_then(|v| v.get("path").and_then(|p| p.as_str()).map(|s| s.to_string()))
+            .map(|p| p == want)
+            .unwrap_or(false)
+    })
+}
+
+#[cfg(windows)]
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
 /// Launch at sign-in, so the tray icon is already there when a download starts.
 /// The registry is the single source of truth; config.json does not mirror it.
+#[cfg(windows)]
 pub fn set_autostart(on: bool) {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
@@ -748,6 +883,60 @@ pub fn set_autostart(on: bool) {
     }
 }
 
+/// Where the system expects to be told "start this at login".
+#[cfg(target_os = "macos")]
+fn autostart_path() -> PathBuf {
+    home().join("Library/LaunchAgents/com.idmlite.app.plist")
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn autostart_path() -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".config"))
+        .join("autostart/idm-lite.desktop")
+}
+
+#[cfg(unix)]
+pub fn set_autostart(on: bool) {
+    let path = autostart_path();
+    if !on {
+        let _ = std::fs::remove_file(&path);
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let exe = exe_path().to_string_lossy().into_owned();
+    #[cfg(target_os = "macos")]
+    let body = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \
+         \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+         <plist version=\"1.0\"><dict>\n\
+         <key>Label</key><string>com.idmlite.app</string>\n\
+         <key>ProgramArguments</key><array><string>{}</string></array>\n\
+         <key>RunAtLoad</key><true/>\n\
+         </dict></plist>\n",
+        exe
+    );
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let body = format!(
+        "[Desktop Entry]\nType=Application\nName={}\nExec=\"{}\"\n\
+         X-GNOME-Autostart-enabled=true\nNoDisplay=true\n",
+        APP_NAME, exe
+    );
+    let _ = std::fs::write(&path, body);
+}
+
+#[cfg(unix)]
+pub fn is_autostart() -> bool {
+    std::fs::read_to_string(autostart_path())
+        .map(|text| text.contains(&exe_path().to_string_lossy().into_owned()))
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
 pub fn is_autostart() -> bool {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
@@ -759,6 +948,7 @@ pub fn is_autostart() -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(windows)]
 pub fn is_registered() -> bool {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
@@ -804,7 +994,10 @@ fn main() {
                     return;
                 }
             };
+            #[cfg(windows)]
             ui::run();
+            #[cfg(not(windows))]
+            headless::run();
         }
     }
 }

@@ -1037,6 +1037,7 @@ version = "1.0.3"
 dependencies = [
  "embed-resource",
  "getrandom 0.4.3",
+ "libc",
  "rfd",
  "serde",
  "serde_json",

@@ -3,10 +3,24 @@
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Read;
-use std::os::windows::fs::FileExt;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+/// Write to a fixed offset without moving a shared file cursor. Windows and
+/// Unix both have this; they spell it differently and disagree about whether
+/// a short write is possible, so the loop lives at the call site.
+#[cfg(windows)]
+fn write_at(file: &std::fs::File, buf: &[u8], at: u64) -> std::io::Result<usize> {
+    use std::os::windows::fs::FileExt;
+    file.seek_write(buf, at)
+}
+
+#[cfg(unix)]
+fn write_at(file: &std::fs::File, buf: &[u8], at: u64) -> std::io::Result<usize> {
+    use std::os::unix::fs::FileExt;
+    file.write_at(buf, at)
+}
 
 const CHUNK: usize = 256 * 1024; // fewer syscalls per megabyte
 const MIN_SPLIT: u64 = 1 << 20; // below this one connection is plenty
@@ -561,8 +575,7 @@ pub fn download(
                         }
                         let mut written = 0;
                         while written < n {
-                            let w = file
-                                .seek_write(&buf[written..n], at + written as u64)
+                            let w = write_at(&file, &buf[written..n], at + written as u64)
                                 .map_err(|e| e.to_string())?;
                             if w == 0 {
                                 return Err("short write".into());
