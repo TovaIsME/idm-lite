@@ -483,6 +483,24 @@ struct IpcMessage {
     job: Capture,
 }
 
+/// A browser replaying its download history hands us one capture per history
+/// row -- 120 of them in three minutes once, each a host process and a job with
+/// 16 sockets, which froze the machine. The extension filters those rows out,
+/// but the app must not depend on that: past this many captures in a minute we
+/// refuse, and the browser keeps the download.
+/// ponytail: fixed window, a token bucket only if real use ever trips it.
+const CAPTURES_PER_MINUTE: u32 = 20;
+
+/// Count a capture against the current minute. False once the burst is over
+/// budget. `window` is (minute start, captures so far).
+fn burst_ok(window: &mut (Instant, u32), now: Instant, max: u32) -> bool {
+    if now.duration_since(window.0) >= Duration::from_secs(60) {
+        *window = (now, 0);
+    }
+    window.1 += 1;
+    window.1 <= max
+}
+
 /// Listen on loopback for captures from the host stub. `wake` nudges the UI.
 pub fn serve_ipc(app: Arc<App>, wake: Box<dyn Fn() + Send>) -> std::io::Result<()> {
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
@@ -493,6 +511,7 @@ pub fn serve_ipc(app: Arc<App>, wake: Box<dyn Fn() + Send>) -> std::io::Result<(
         &IpcInfo { port, token: token.clone(), pid: std::process::id() },
     );
     std::thread::spawn(move || {
+        let mut window = (Instant::now(), 0u32);
         for stream in listener.incoming().flatten() {
             let mut buf = Vec::new();
             let mut limited = stream.try_clone().map(|s| s.take(1 << 18));
@@ -509,6 +528,10 @@ pub fn serve_ipc(app: Arc<App>, wake: Box<dyn Fn() + Send>) -> std::io::Result<(
                 continue;
             }
             let mut stream = stream;
+            if !burst_ok(&mut window, Instant::now(), CAPTURES_PER_MINUTE) {
+                let _ = stream.write_all(b"no"); // answered, so the stub stops
+                continue;
+            }
             let _ = stream.write_all(b"ok");
             app.inbox.lock().unwrap().push(msg.job);
             wake();
@@ -517,8 +540,10 @@ pub fn serve_ipc(app: Arc<App>, wake: Box<dyn Fn() + Send>) -> std::io::Result<(
     Ok(())
 }
 
-/// Hand a capture to the running app. True if it accepted.
-fn ipc_send(job: &serde_json::Value, wait: Duration) -> bool {
+/// Hand a capture to the running app. None if no app answered at all, which is
+/// the only case worth starting one for -- a refusal must not become a retry
+/// storm on top of the burst that caused it.
+fn ipc_send(job: &serde_json::Value, wait: Duration) -> Option<bool> {
     let deadline = Instant::now() + wait;
     loop {
         if let Some(info) = read_json::<IpcInfo>(&data_file("ipc.json")) {
@@ -532,13 +557,16 @@ fn ipc_send(job: &serde_json::Value, wait: Duration) -> bool {
                     let mut reply = String::new();
                     let _ = stream.take(16).read_to_string(&mut reply);
                     if reply == "ok" {
-                        return true;
+                        return Some(true);
+                    }
+                    if reply == "no" {
+                        return Some(false);
                     }
                 }
             }
         }
         if Instant::now() >= deadline {
-            return false;
+            return None;
         }
         std::thread::sleep(Duration::from_millis(400));
     }
@@ -593,8 +621,10 @@ fn host_mode() {
         }
         let job: serde_json::Value = serde_json::from_slice(&buf).unwrap_or(serde_json::Value::Null);
         let url = job.get("url").and_then(|u| u.as_str()).unwrap_or("").to_string();
-        let accepted = ipc_send(&job, Duration::ZERO)
-            || (launch_app() && ipc_send(&job, Duration::from_secs(25)));
+        let accepted = match ipc_send(&job, Duration::ZERO) {
+            Some(answer) => answer,
+            None => launch_app() && ipc_send(&job, Duration::from_secs(25)) == Some(true),
+        };
 
         let reply = serde_json::json!({ "accepted": accepted, "url": url }).to_string();
         let mut out = stdout.lock();
@@ -722,7 +752,7 @@ fn main() {
             let _lock = match instance_lock() {
                 Some(lock) => lock,
                 None => {
-                    ipc_send(&serde_json::json!({}), Duration::ZERO);
+                    let _ = ipc_send(&serde_json::json!({}), Duration::ZERO);
                     return;
                 }
             };
@@ -756,6 +786,20 @@ mod tests {
         std::fs::write(dir.join("a.zip.idmstate"), b"{}").unwrap();
         assert!(unique_path(&folder, "a.zip", &none).ends_with("a.zip"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn capture_burst_is_capped_per_minute() {
+        let t0 = Instant::now();
+        let mut window = (t0, 0);
+        for _ in 0..3 {
+            assert!(burst_ok(&mut window, t0, 3));
+        }
+        // a history replay keeps arriving; everything past the budget is refused
+        assert!(!burst_ok(&mut window, t0, 3));
+        assert!(!burst_ok(&mut window, t0 + Duration::from_secs(59), 3));
+        // next minute, a real download is taken again
+        assert!(burst_ok(&mut window, t0 + Duration::from_secs(60), 3));
     }
 
     #[test]
