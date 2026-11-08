@@ -1,6 +1,6 @@
 [package]
 name = "idm-lite-setup"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 description = "Installer for IDM-lite"
 
@@ -12,6 +12,15 @@ path = "src/main.rs"
 
 [dependencies]
 winreg = "0.56"
+# For the Start Menu shortcut and the delayed delete. Both were shelling out
+# to powershell.exe, which is what every dropper does and what got this
+# installer scored as Trojan:Win32/Bearfoos.A!ml by Defender's ML model.
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_Storage_FileSystem",
+] }
 
 [build-dependencies]
 embed-resource = "3"

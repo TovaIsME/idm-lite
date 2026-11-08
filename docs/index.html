@@ -222,6 +222,7 @@ footer .sp { margin-left: auto; }
       <a href="#how" class="hide-sm">How it works</a>
       <a href="#links" class="hide-sm">One link, many files</a>
       <a href="#install">Install</a>
+      <a href="#defender" class="hide-sm">Defender</a>
       <a href="https://github.com/tovaisme/idm-lite">GitHub</a>
     </div>
   </div>
@@ -348,6 +349,21 @@ footer .sp { margin-left: auto; }
         Get the latest release
       </a>
     </div>
+  </div>
+</section>
+
+<section id="defender">
+  <div class="wrap">
+    <h2 class="rise">If Windows Defender flags it</h2>
+    <p class="sub rise d1">A new, unsigned executable that installs itself, writes an uninstall entry and then downloads files for a living is the exact shape of a dropper. Defender's machine-learning model sometimes scores it as one — 1.0.2 was flagged <code>Trojan:Win32/Bearfoos.A!ml</code> on a clean machine. The <code>!ml</code> means a heuristic guess, not a match on known malware.</p>
+
+    <div class="steps">
+      <div class="step rise"><div><h3>What 1.0.3 changed</h3><p>The installer no longer spawns a shell for anything. The Start Menu shortcut is written through the shell's own <code>IShellLink</code> interface instead of driving WScript.Shell through PowerShell; the uninstaller hands its own exe to <code>MoveFileEx</code> for deletion on reboot instead of asking PowerShell to sleep and delete it; and nothing launches a browser or Explorer at the end.</p></div></div>
+      <div class="step rise d1"><div><h3>What it still does</h3><p>Writes an uninstall key so it appears in Add or remove programs, writes the native messaging keys so your browser can reach it, and puts two executables in <code>%LOCALAPPDATA%\Programs\IDM-lite</code>. That is what installing is.</p></div></div>
+      <div class="step rise d2"><div><h3>If it happens anyway</h3><p>Check the download against <code>SHA256SUMS.txt</code> on the release, or build it yourself from source and compare. Then report it to Microsoft at <a href="https://www.microsoft.com/en-us/wdsi/filesubmission">microsoft.com/wdsi/filesubmission</a> — that is what clears it for everyone.</p></div></div>
+    </div>
+
+    <div class="note rise"><b>Honest about the limit.</b> Only a code signing certificate removes heuristic flags for good, and this project does not have one yet. A future release can be flagged again. Every build comes from this repository, and the packaging script refuses to ship a binary carrying any path from the machine that built it.</div>
   </div>
 </section>
 

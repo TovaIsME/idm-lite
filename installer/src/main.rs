@@ -69,22 +69,43 @@ fn stop_running() {
     std::thread::sleep(std::time::Duration::from_millis(700));
 }
 
+/// Write the Start Menu .lnk through the shell's own COM interface.
+///
+/// This used to drive WScript.Shell through powershell.exe, which is exactly
+/// the shape of a dropper: a freshly written, unsigned exe spawning a shell to
+/// place a shortcut and then writing an uninstall key. Defender's model scored
+/// that sequence as Trojan:Win32/Bearfoos.A!ml, and it was right to be
+/// suspicious of it. Doing it in-process spawns nothing.
 fn make_shortcut(target: &Path, link: &Path) -> bool {
-    // WScript.Shell through PowerShell avoids pulling a COM crate in for
-    // one .lnk file.
-    let script = format!(
-        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{}'); \
-         $s.TargetPath = '{}'; $s.WorkingDirectory = '{}'; \
-         $s.Description = 'IDM-lite download manager'; $s.Save()",
-        link.display(),
-        target.display(),
-        target.parent().map(|p| p.display().to_string()).unwrap_or_default()
-    );
-    Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    use windows::core::{Interface, HSTRING};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+
+    let dir = target.parent().unwrap_or(target).to_path_buf();
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let made = (|| -> windows::core::Result<()> {
+            let shell: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+            shell.SetPath(&HSTRING::from(target.as_os_str()))?;
+            shell.SetWorkingDirectory(&HSTRING::from(dir.as_os_str()))?;
+            shell.SetDescription(&HSTRING::from("IDM-lite download manager"))?;
+            shell.cast::<IPersistFile>()?.Save(&HSTRING::from(link.as_os_str()), true)?;
+            Ok(())
+        })();
+        CoUninitialize();
+        made.is_ok()
+    }
+}
+
+/// Ask Windows to delete a path on the next boot. Used for the one file an
+/// uninstaller cannot remove: itself.
+fn delete_on_reboot(path: &Path) -> bool {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_DELAY_UNTIL_REBOOT};
+    unsafe { MoveFileExW(&HSTRING::from(path.as_os_str()), None, MOVEFILE_DELAY_UNTIL_REBOOT).is_ok() }
 }
 
 fn register_uninstaller(root: &Path, exe: &Path, setup: &Path) {
@@ -204,11 +225,8 @@ fn install(quiet: bool) {
     println!("  That folder is also opening in Explorer so you can paste the path.");
 
     if !quiet {
-        let _ = Command::new("explorer").arg(&ext).spawn();
-        std::thread::sleep(std::time::Duration::from_millis(600));
-        let _ = Command::new("cmd")
-            .args(["/c", "start", "", "chrome://extensions"])
-            .spawn();
+        // Nothing is launched from here. An installer opening a browser is
+        // another thing droppers do, and the path below is all the user needs.
         pause();
     }
 }
@@ -245,15 +263,22 @@ fn uninstall(quiet: bool) {
     let _ = std::fs::remove_dir_all(root.join("extension"));
     // When launched from Add/Remove Programs this very exe sits inside the
     // folder, so the folder itself has to go after the process exits.
-    let doomed = root.display().to_string().replace('\'', "''");
-    let script = format!(
-        "Start-Sleep -Seconds 2; Remove-Item -LiteralPath '{}' -Recurse -Force \
-         -ErrorAction SilentlyContinue",
-        doomed
-    );
-    let _ = Command::new("powershell")
-        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
-        .spawn();
+    // Everything that is not this running exe goes now; the exe itself is
+    // handed to Windows to remove on the next boot. The old version asked
+    // powershell.exe to sleep and then delete the folder, which is the
+    // self-deleting-dropper pattern and scored accordingly.
+    for entry in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+        let path = entry.path();
+        let running = std::env::current_exe().map(|me| me == path).unwrap_or(false);
+        if running {
+            delete_on_reboot(&path);
+        } else if path.is_dir() {
+            let _ = std::fs::remove_dir_all(&path);
+        } else {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    let _ = std::fs::remove_dir(&root);
     say("4/4", "deleted the program folder");
 
     println!();
