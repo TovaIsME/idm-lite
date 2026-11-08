@@ -29,8 +29,22 @@ fn newer(remote: &str, local: &str) -> bool {
 
 struct Release {
     tag: String,
-    setup: Option<(String, String)>, // (file name, download url)
+    asset: Option<(String, String)>, // (file name, download url)
     page: String,
+}
+
+/// Which asset of a release belongs to the machine asking.
+///
+/// Windows has an installer that can replace a running app. The others get an
+/// archive: unpacking one over a running app is the user's call, not ours, so
+/// the updater fetches it and says where it put it.
+fn wanted_asset(name: &str) -> bool {
+    #[cfg(windows)]
+    return name.starts_with("IDM-lite-Setup") && name.ends_with(".exe");
+    #[cfg(target_os = "macos")]
+    return name.ends_with("-macos.zip") || name.ends_with(".dmg");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    return name.ends_with("-linux-x86_64.tar.gz") || name.ends_with("_amd64.deb");
 }
 
 fn latest() -> Result<Release, String> {
@@ -62,19 +76,18 @@ fn latest() -> Result<Release, String> {
     if tag.is_empty() {
         return Err("that release has no tag".into());
     }
-    let setup = json["assets"]
+    let asset = json["assets"]
         .as_array()
         .unwrap_or(&Vec::new())
         .iter()
         .find_map(|asset| {
             let name = asset["name"].as_str()?;
             let url = asset["browser_download_url"].as_str()?;
-            let is_setup = name.starts_with("IDM-lite-Setup") && name.ends_with(".exe");
-            is_setup.then(|| (name.to_string(), url.to_string()))
+            wanted_asset(name).then(|| (name.to_string(), url.to_string()))
         });
     Ok(Release {
         tag,
-        setup,
+        asset,
         page: json["html_url"].as_str().unwrap_or_default().to_string(),
     })
 }
@@ -129,10 +142,11 @@ fn main() {
     }
     println!("  {} is available.", release.tag);
 
-    let (name, url) = match release.setup {
+    let (name, url) = match release.asset {
         Some(found) => found,
         None => {
-            println!("  ...but it ships no setup exe. Get it here:\n  {}", release.page);
+            println!("  ...but it ships nothing for this platform. Get it here:");
+            println!("  {}", release.page);
             pause();
             std::process::exit(1);
         }
@@ -154,17 +168,34 @@ fn main() {
         }
     };
 
-    println!("  starting the installer. It will close IDM-lite while it works.");
-    match std::process::Command::new(&installer).spawn() {
-        // the installer takes it from here, and it cannot replace our own exe
-        // while we are still holding the console open on top of it
-        Ok(_) => println!("  handed over to {}", installer.display()),
-        Err(e) => {
-            println!("  could not start the installer: {}", e);
-            println!("  it is saved here, run it yourself: {}", installer.display());
-            pause();
-            std::process::exit(1);
+    // Only Windows ships something that can install itself over a running app.
+    #[cfg(windows)]
+    {
+        println!("  starting the installer. It will close IDM-lite while it works.");
+        match std::process::Command::new(&installer).spawn() {
+            // the installer takes it from here, and it cannot replace our own
+            // exe while we are still holding the console open on top of it
+            Ok(_) => println!("  handed over to {}", installer.display()),
+            Err(e) => {
+                println!("  could not start the installer: {}", e);
+                println!("  it is saved here, run it yourself: {}", installer.display());
+                pause();
+                std::process::exit(1);
+            }
         }
+    }
+    #[cfg(not(windows))]
+    {
+        println!("  saved to {}", installer.display());
+        println!();
+        if name.ends_with(".deb") {
+            println!("  install it with:  sudo apt install \"{}\"", installer.display());
+        } else if name.ends_with(".tar.gz") {
+            println!("  unpack it and run install.sh inside.");
+        } else {
+            println!("  open it and drag IDM-lite to Applications.");
+        }
+        pause();
     }
 }
 
