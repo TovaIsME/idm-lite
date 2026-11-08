@@ -18,15 +18,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 getrandom = "0.4"
 
-# The window is Windows-only for now. The engine, the native messaging host
-# and registration build everywhere; see `src/headless.rs` for what runs in
-# place of the window elsewhere.
-[target.'cfg(windows)'.dependencies]
-winreg = "0.56"
+# The window builds everywhere now. Linux needs webkit2gtk and gtk3 present
+# to compile against; see .github/workflows/build.yml for the package list.
 wry = "0.57.1"
 tao = "0.37.2"
 rfd = "0.17.2"
 tray-icon = "0.26.1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

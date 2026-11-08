@@ -1,8 +1,9 @@
 name: build
 
-# The window is Windows-only; the engine, the native messaging host and
-# registration are not. This is what keeps that true: every push compiles and
-# tests all three platforms, so a Windows-ism cannot quietly creep back in.
+# The window, the engine, the native messaging host and registration all build
+# on Windows, macOS and Linux. This is what keeps that true: every push
+# compiles and tests all three, and asks each platform's web engine whether it
+# still gives the page WebCrypto, which the paste scraper depends on.
 
 on:
   push:
@@ -30,23 +31,46 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
+      # wry compiles against the system web engine, and tray-icon against the
+      # indicator library. Windows and macOS ship theirs.
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            xvfb
+
       - name: Build
         run: cargo build --release --bin IDM-lite --bin update
 
       - name: Test
         run: cargo test --release
 
-      - name: The binary runs and knows what it is
+      - name: The binaries run and know what they are
         shell: bash
         run: |
-          # --unregister touches nothing that does not exist yet, so it is a
+          # --unregister touches nothing that is not already there, so it is a
           # safe way to prove the thing starts and takes an argument.
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          if [ "$RUNNER_OS" = "Windows" ]; then
             ./target/release/IDM-lite.exe --unregister
             ./target/release/update.exe --check < /dev/null
           else
             ./target/release/IDM-lite --unregister
             ./target/release/update --check < /dev/null
+          fi
+
+      # The answer decides where the paste scraper can live on this platform.
+      - name: Does the page get WebCrypto
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a cargo run --release --example secure_context
+          else
+            cargo run --release --example secure_context
           fi
 
   extension:

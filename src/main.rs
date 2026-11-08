@@ -11,9 +11,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod download;
-#[cfg(not(windows))]
 mod headless;
-#[cfg(windows)]
 mod ui;
 
 use download::{Job, Status};
@@ -971,6 +969,20 @@ pub fn is_registered() -> bool {
     })
 }
 
+/// No display, or asked for plainly.
+fn headless_wanted() -> bool {
+    if std::env::var_os("IDMLITE_HEADLESS").is_some() {
+        return true;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        return std::env::var_os("DISPLAY").is_none()
+            && std::env::var_os("WAYLAND_DISPLAY").is_none();
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    false
+}
+
 // -------------------------------------------------------------------- main
 
 fn main() {
@@ -994,10 +1006,14 @@ fn main() {
                     return;
                 }
             };
-            #[cfg(windows)]
-            ui::run();
-            #[cfg(not(windows))]
-            headless::run();
+            // A window needs something to draw on. Over SSH or on a server
+            // there is nothing, and the engine is still perfectly useful, so
+            // that case runs the app without one rather than dying.
+            if headless_wanted() {
+                headless::run();
+            } else {
+                ui::run();
+            }
         }
     }
 }

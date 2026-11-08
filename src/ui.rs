@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
+#[cfg(windows)]
 use tao::platform::windows::WindowBuilderExtWindows;
 use tao::window::{Fullscreen, ResizeDirection, Window, WindowBuilder};
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
@@ -190,12 +191,50 @@ fn direction_for(name: &str) -> Option<ResizeDirection> {
     })
 }
 
+/// Show a path in the system's file manager, selecting it where that is a
+/// thing the file manager can do.
 fn open_in_explorer(path: &str, select: bool) {
-    let mut command = std::process::Command::new("explorer");
-    if select {
-        command.arg("/select,");
+    #[cfg(windows)]
+    {
+        let mut command = std::process::Command::new("explorer");
+        if select {
+            command.arg("/select,");
+        }
+        let _ = command.arg(path).spawn();
     }
-    let _ = command.arg(path).spawn();
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = std::process::Command::new("open");
+        if select {
+            command.arg("-R"); // reveal it in Finder rather than open it
+        }
+        let _ = command.arg(path).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // No portable "select this file" across Linux file managers, so the
+        // folder is what gets opened.
+        let target = if select {
+            std::path::Path::new(path)
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.to_string())
+        } else {
+            path.to_string()
+        };
+        let _ = std::process::Command::new("xdg-open").arg(target).spawn();
+    }
+}
+
+/// Hand a link to whatever the desktop uses to open links.
+fn open_externally(url: &str) {
+    #[cfg(windows)]
+    let opener = "explorer";
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let opener = "xdg-open";
+    let _ = std::process::Command::new(opener).arg(url).spawn();
 }
 
 pub fn run() {
@@ -203,15 +242,17 @@ pub fn run() {
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
-    let window = WindowBuilder::new()
+    let builder = WindowBuilder::new()
         .with_title(crate::APP_NAME)
         .with_inner_size(LogicalSize::new(1020.0, 640.0))
         .with_min_inner_size(LogicalSize::new(760.0, 460.0))
         .with_decorations(false)
-        .with_undecorated_shadow(true)
-        .with_visible(false) // revealed once the page paints, so there is no white flash
-        .build(&event_loop)
-        .expect("create window");
+        .with_visible(false); // revealed once the page paints, so there is no white flash
+    // a drop shadow on a frameless window is Windows' to draw; the other two
+    // window managers do it themselves
+    #[cfg(windows)]
+    let builder = builder.with_undecorated_shadow(true);
+    let window = builder.build(&event_loop).expect("create window");
 
     let ipc_proxy = proxy.clone();
     // Served over a custom protocol rather than with_html on purpose. with_html
@@ -487,7 +528,7 @@ pub fn run() {
                         // one argument, never a shell string
                         if let Some(url) = msg.get("url").and_then(|u| u.as_str()) {
                             if safe_link(url) {
-                                let _ = std::process::Command::new("explorer").arg(url).spawn();
+                                open_externally(url);
                             }
                         }
                         return;
