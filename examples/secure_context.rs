@@ -27,8 +27,11 @@ window.ipc.postMessage(JSON.stringify({
 fn main() {
     let event_loop = EventLoopBuilder::<String>::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    // shown on Linux for the same reason the app shows it: GTK will not make
+    // the window real until it is, and wry needs it real
+    let visible = cfg!(all(unix, not(target_os = "macos")));
     let window = WindowBuilder::new()
-        .with_visible(false)
+        .with_visible(visible)
         .build(&event_loop)
         .expect("create window");
 

@@ -252,6 +252,12 @@ pub fn run() {
     // window managers do it themselves
     #[cfg(windows)]
     let builder = builder.with_undecorated_shadow(true);
+    // GTK does not create the underlying window until the widget is shown,
+    // and wry needs that handle to attach a webview, so on Linux it is built
+    // shown and hidden again a line later. Everywhere else it starts hidden
+    // and is revealed once the page has painted.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let builder = builder.with_visible(true);
     let window = builder.build(&event_loop).expect("create window");
 
     let ipc_proxy = proxy.clone();
@@ -279,6 +285,9 @@ pub fn run() {
         })
         .build(&window)
         .expect("create webview");
+    // see above: it was only shown so GTK would make the window real
+    #[cfg(all(unix, not(target_os = "macos")))]
+    window.set_visible(false);
 
     // The app lives in the tray so a captured download opens instantly
     // instead of paying for a cold start.

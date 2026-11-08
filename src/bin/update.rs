@@ -46,6 +46,13 @@ fn latest() -> Result<Release, String> {
         .call()
         .map_err(|e| e.to_string())?;
     let code = resp.status().as_u16();
+    if code == 403 || code == 429 {
+        // anonymous API calls are rate limited per address; a shared one
+        // (an office, a CI runner) can be out of allowance through no
+        // fault of ours
+        return Err("GitHub is rate limiting this address. Try again later,                     or get the release from github.com/TovaIsME/idm-lite/releases"
+            .to_string());
+    }
     if !(200..300).contains(&code) {
         return Err(format!("GitHub answered HTTP {}", code));
     }
