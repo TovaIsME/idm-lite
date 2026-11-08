@@ -544,6 +544,22 @@ fn ipc_send(job: &serde_json::Value, wait: Duration) -> bool {
     }
 }
 
+/// Single-instance lock. An unshared file handle: Windows refuses a second
+/// open while this one lives, and releases it when the process dies, so a
+/// crash cannot strand a stale lock. Held for the app's whole lifetime.
+///
+/// Without it, a burst of captures makes every host stub spawn its own app
+/// (they all race past the ipc.json check before any instance has written
+/// it), and N copies of the download engine run at once.
+fn instance_lock() -> Option<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let path = data_file("instance.lock");
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::OpenOptions::new().write(true).create(true).share_mode(0).open(path).ok()
+}
+
 fn launch_app() -> bool {
     use std::os::windows::process::CommandExt;
     const DETACHED_PROCESS: u32 = 0x0000_0008;
@@ -702,10 +718,14 @@ fn main() {
         Some("--unregister") => unregister(),
         Some(_) => std::process::exit(2),
         None => {
-            // already running? that instance raises its window instead
-            if ipc_send(&serde_json::json!({}), Duration::ZERO) {
-                return;
-            }
+            // another instance owns the app: it raises its window, we exit
+            let _lock = match instance_lock() {
+                Some(lock) => lock,
+                None => {
+                    ipc_send(&serde_json::json!({}), Duration::ZERO);
+                    return;
+                }
+            };
             ui::run();
         }
     }
