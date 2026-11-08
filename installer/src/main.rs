@@ -20,7 +20,7 @@ const EXT_ICON48: &[u8] = include_bytes!("../../dist/payload/extension/icon48.pn
 const EXT_ICON128: &[u8] = include_bytes!("../../dist/payload/extension/icon128.png");
 
 const APP_NAME: &str = "IDM-lite";
-const VERSION: &str = "1.0.0";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\IDM-lite";
 
 fn install_root() -> PathBuf {

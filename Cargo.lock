@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "idm-lite"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "embed-resource",
  "getrandom 0.4.3",

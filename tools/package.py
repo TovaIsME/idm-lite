@@ -11,6 +11,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXE = os.path.join(ROOT, "target", "release", "IDM-lite.exe")
 DIST = os.path.join(ROOT, "dist", "IDM-lite")
 
+
+def version():
+    """Cargo.toml is the one place the version is written."""
+    with open(os.path.join(ROOT, "Cargo.toml")) as f:
+        for line in f:
+            if line.startswith("version"):
+                return line.split('"')[1]
+    sys.exit("no version in Cargo.toml")
+
 INSTALL = """@echo off
 title IDM-lite setup
 echo Registering IDM-lite with Chrome / Edge / Brave...
@@ -95,7 +104,8 @@ def build_installer():
     for leak in (cargo_home, ROOT, os.path.expanduser("~")):
         if leak.encode("ascii", "ignore") in blob:
             sys.exit("refusing to ship installer: %r is embedded in it" % leak)
-    shutil.copy2(built, os.path.join(ROOT, "dist", "IDM-lite-Setup-1.0.0.exe"))
+    shutil.copy2(built, os.path.join(
+        ROOT, "dist", "IDM-lite-Setup-%s.exe" % version()))
     print("installer carries no local paths")
 
 
@@ -115,8 +125,7 @@ def main():
 
     build_installer()
 
-    version = "1.0.0"
-    archive = os.path.join(ROOT, "dist", "IDM-lite-%s-windows-x64" % version)
+    archive = os.path.join(ROOT, "dist", "IDM-lite-%s-windows-x64" % version())
     shutil.make_archive(archive, "zip", root_dir=os.path.join(ROOT, "dist"),
                         base_dir="IDM-lite")
     print("release  ->", archive + ".zip",

@@ -6,7 +6,7 @@
 
 Your browser fetches on one connection and gives up when it drops. IDM-lite splits the file across many connections, reconnects the ones that die, and hands you the finished thing.
 
-[![Download](https://img.shields.io/badge/Download-v1.0.0-ff7a1a?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/tovaisme/idm-lite/releases/latest)
+[![Download](https://img.shields.io/badge/Download-v1.0.1-ff7a1a?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/tovaisme/idm-lite/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-5aa469?style=for-the-badge)](LICENSE)
 [![Size](https://img.shields.io/badge/Single%20exe-1.9%20MB-444?style=for-the-badge)](https://github.com/tovaisme/idm-lite/releases/latest)
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-d2544b?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
@@ -29,7 +29,7 @@ A browser extension watches your downloads. The moment one starts, it hands the 
 
 ## Install
 
-Download **[IDM-lite-Setup-1.0.0.exe](https://github.com/tovaisme/idm-lite/releases/latest)** and run it. No admin rights needed, everything installs for your user only.
+Download **[IDM-lite-Setup-1.0.1.exe](https://github.com/tovaisme/idm-lite/releases/latest)** and run it. No admin rights needed, everything installs for your user only.
 
 The installer puts the app in `%LOCALAPPDATA%\Programs\IDM-lite`, registers it with Chrome, Edge, Brave and Chromium, adds a Start menu entry, lists itself in Add or remove programs, and starts the app in your tray.
 
