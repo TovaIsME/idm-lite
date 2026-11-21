@@ -25,6 +25,7 @@ SUFFIX = ".exe" if WINDOWS else ""
 EXE = os.path.join(ROOT, "target", "release", "IDM-lite" + SUFFIX)
 UPDATER = os.path.join(ROOT, "target", "release", "update" + SUFFIX)
 DIST = os.path.join(ROOT, "dist", "IDM-lite")
+CARGO_HOME = os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo")
 
 
 def version():
@@ -61,72 +62,80 @@ pause
 """
 
 
-def build_clean():
-    """Release build with absolute paths stripped.
+def cargo_env():
+    """Environment for a release build with absolute paths stripped.
 
     rustc bakes the source path of every panic site into the binary, including
     ones from crates under CARGO_HOME, so a plain `cargo build` ships the
     builder's home directory to everyone who downloads the exe. Remapping the
     prefixes keeps the username out without hardcoding it in a tracked file.
+
+    On Windows the C runtime is linked in statically. Without that the exe
+    imports VCRUNTIME140.dll and VCRUNTIME140_1.dll, which only exist on
+    machines that happen to have the Visual C++ Redistributable, and everyone
+    else gets "VCRUNTIME140_1.dll was not found" before the window opens.
     """
-    cargo_home = os.environ.get("CARGO_HOME") or os.path.join(
-        os.path.expanduser("~"), ".cargo")
+    flags = [
+        "--remap-path-prefix=%s=/cargo" % CARGO_HOME,
+        "--remap-path-prefix=%s=/idm-lite" % ROOT,
+    ]
+    if WINDOWS:
+        flags.append("-Ctarget-feature=+crt-static")
     # CARGO_ENCODED_RUSTFLAGS, not RUSTFLAGS: the latter splits on spaces, and
     # a Windows home directory very often contains one.
-    flags = "\x1f".join([
-        "--remap-path-prefix=%s=/cargo" % cargo_home,
-        "--remap-path-prefix=%s=/idm-lite" % ROOT,
-    ])
-    env = dict(os.environ, CARGO_ENCODED_RUSTFLAGS=flags)
+    env = dict(os.environ, CARGO_ENCODED_RUSTFLAGS="".join(flags))
     env.pop("RUSTFLAGS", None)
-    print("building with remapped paths...")
-    subprocess.run(["cargo", "build", "--release"], cwd=ROOT, env=env, check=True)
+    return env
 
+
+def check_shippable(path):
+    """Refuse a binary that leaks local paths or needs a runtime we do not ship."""
+    with open(path, "rb") as f:
+        blob = f.read()
+    for leak in (CARGO_HOME, ROOT, os.path.expanduser("~")):
+        if leak.encode("ascii", "ignore") in blob:
+            sys.exit("refusing to package: %r is embedded in %s"
+                     % (leak, os.path.basename(path)))
+    # import table names are plain ASCII; any of these means a DLL most
+    # machines do not have
+    lowered = blob.lower()
+    for dll in (b"vcruntime140", b"msvcp140", b"api-ms-win-crt-"):
+        if dll in lowered:
+            sys.exit("refusing to package: %s imports %s, link the CRT statically"
+                     % (os.path.basename(path), dll.decode()))
+
+
+def build_clean():
+    print("building with remapped paths...")
+    subprocess.run(["cargo", "build", "--release"], cwd=ROOT, env=cargo_env(), check=True)
     for built in (EXE, UPDATER):
-        with open(built, "rb") as f:
-            blob = f.read()
-        for leak in (cargo_home, ROOT, os.path.expanduser("~")):
-            if leak.encode("ascii", "ignore") in blob:
-                sys.exit("refusing to package: %r is embedded in %s"
-                         % (leak, os.path.basename(built)))
-    print("binaries carry no local paths")
+        check_shippable(built)
+    print("binaries carry no local paths and need no runtime")
+
+
+def find_iscc():
+    """Inno Setup's compiler, wherever its installer put it."""
+    found = shutil.which("iscc")
+    if found:
+        return found
+    for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"),
+                 os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs")):
+        candidate = os.path.join(base or "", "Inno Setup 6", "ISCC.exe")
+        if os.path.exists(candidate):
+            return candidate
+    sys.exit("Inno Setup 6 is needed for the installer: winget install JRSoftware.InnoSetup")
 
 
 def build_installer():
-    """Stage the payload, then build the single file setup exe around it.
-
-    The installer is its own crate precisely so that a plain `cargo build` at
-    the repo root never depends on a staged payload that may not exist yet.
-    """
-    payload = os.path.join(ROOT, "dist", "payload")
-    shutil.rmtree(payload, ignore_errors=True)
-    os.makedirs(payload)
-    shutil.copy2(EXE, payload)
-    shutil.copy2(UPDATER, payload)
-    shutil.copytree(os.path.join(ROOT, "extension"),
-                    os.path.join(payload, "extension"),
-                    ignore=shutil.ignore_patterns("*.pem"))
-
-    crate = os.path.join(ROOT, "installer")
-    cargo_home = os.environ.get("CARGO_HOME") or os.path.join(
-        os.path.expanduser("~"), ".cargo")
-    env = dict(os.environ, CARGO_ENCODED_RUSTFLAGS="\x1f".join([
-        "--remap-path-prefix=%s=/cargo" % cargo_home,
-        "--remap-path-prefix=%s=/idm-lite" % ROOT,
-    ]))
-    env.pop("RUSTFLAGS", None)
+    """Wrap the staged folder in a setup wizard (installer/IDM-lite.iss)."""
     print("building the installer...")
-    subprocess.run(["cargo", "build", "--release"], cwd=crate, env=env, check=True)
-
-    built = os.path.join(crate, "target", "release", "IDM-lite-Setup.exe")
-    with open(built, "rb") as f:
-        blob = f.read()
-    for leak in (cargo_home, ROOT, os.path.expanduser("~")):
-        if leak.encode("ascii", "ignore") in blob:
-            sys.exit("refusing to ship installer: %r is embedded in it" % leak)
-    shutil.copy2(built, os.path.join(
+    subprocess.run([find_iscc(), "/Q",
+                    "/DAppVersion=" + version(),
+                    "/DPayload=" + DIST,
+                    "/O" + os.path.join(ROOT, "dist"),
+                    os.path.join(ROOT, "installer", "IDM-lite.iss")], check=True)
+    print("release  ->", os.path.join(
         ROOT, "dist", "IDM-lite-Setup-%s.exe" % version()))
-    print("installer carries no local paths")
 
 
 def icon_png(size):

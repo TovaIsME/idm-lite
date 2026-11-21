@@ -6,7 +6,7 @@
 
 Your browser fetches on one connection and gives up when it drops. IDM-lite splits the file across many connections, reconnects the ones that die, and hands you the finished thing.
 
-[![Download](https://img.shields.io/badge/Download-v1.0.4-ff7a1a?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/tovaisme/idm-lite/releases/latest)
+[![Download](https://img.shields.io/badge/Download-v1.0.5-ff7a1a?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/tovaisme/idm-lite/releases/latest)
 [![License](https://img.shields.io/badge/License-MIT-5aa469?style=for-the-badge)](LICENSE)
 [![Size](https://img.shields.io/badge/Single%20exe-1.9%20MB-444?style=for-the-badge)](https://github.com/tovaisme/idm-lite/releases/latest)
 [![Rust](https://img.shields.io/badge/Built%20with-Rust-d2544b?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org)
@@ -33,10 +33,10 @@ A browser extension watches your downloads. The moment one starts, it hands the 
 
 | You have | Take | Installs to |
 |---|---|---|
-| Windows 10 or 11 | `IDM-lite-Setup-1.0.4.exe` | `%LOCALAPPDATA%\Programs\IDM-lite` |
-| macOS 10.15+ | `IDM-lite-1.0.4.dmg`, drag to Applications | `/Applications` |
+| Windows 10 or 11 | `IDM-lite-Setup-1.0.5.exe` | `%LOCALAPPDATA%\Programs\IDM-lite` |
+| macOS 10.15+ | `IDM-lite-1.0.5.dmg`, drag to Applications | `/Applications` |
 | Debian, Ubuntu, Mint | `idm-lite_1.0.4_amd64.deb` via `sudo apt install ./...` | `/usr/bin`, `/usr/share/idm-lite` |
-| Any other Linux | `idm-lite-1.0.4-linux-x86_64.tar.gz`, run `install.sh` | `~/.local` |
+| Any other Linux | `idm-lite-1.0.5-linux-x86_64.tar.gz`, run `install.sh` | `~/.local` |
 
 All from **[the latest release](https://github.com/tovaisme/idm-lite/releases/latest)**. No admin rights anywhere: the Windows installer and the Linux tarball install for your user only.
 
@@ -60,7 +60,7 @@ Then there is the one step no installer is allowed to do for you. Open `chrome:/
 
 **Why that step is manual.** Chrome deliberately blocks installers from adding extensions. Sideloading through the registry has been disabled for off store extensions since Chrome 44, and the only ways around it are a Chrome Web Store listing or an enterprise policy that marks the whole browser as managed by an organisation. Neither belongs in a small tool like this, so the extension is loaded by hand, once.
 
-Uninstall from Add or remove programs, or run the setup again with `/uninstall`. There is a `/silent` switch for unattended installs. Your downloaded files are never touched.
+The setup is a standard Inno Setup wizard. If Microsoft Edge WebView2 is missing, which can happen on an older Windows 10, it downloads and installs it first. Nothing else needs to be installed: the C runtime is linked into the exe, so there is no Visual C++ Redistributable to go missing (before 1.0.5 that was the `VCRUNTIME140_1.dll was not found` error). Uninstall from Add or remove programs. `/SILENT` or `/VERYSILENT` installs without asking. Your downloaded files are never touched.
 
 **macOS will warn you the app is from an unidentified developer.** It is not notarized, which needs an Apple Developer account. Right-click it and choose Open the first time; macOS remembers after that.
 
@@ -129,7 +129,7 @@ A new, unsigned executable that installs itself, writes an uninstall entry and t
 | `powershell.exe Start-Sleep; Remove-Item -Recurse` to delete itself after uninstall | `MoveFileEx(..., DELAY_UNTIL_REBOOT)`, which is what Windows provides for it |
 | the installer launching `explorer` and `cmd /c start chrome://extensions` at the end | the paths printed for you to open |
 
-The installer now spawns no shell at all. What it still does, and will keep doing, is write `HKCU\...\Uninstall\IDM-lite` so it appears in Add or remove programs, write the native messaging keys so your browser can reach it, and drop two executables in `%LOCALAPPDATA%\Programs\IDM-lite`. That is what installing is.
+Since 1.0.5 the installer is a standard Inno Setup wizard instead of a self-made exe. What it does, and will keep doing, is write an `HKCU\...\Uninstall` entry so it appears in Add or remove programs, write the native messaging keys so your browser can reach it, and drop two executables in `%LOCALAPPDATA%\Programs\IDM-lite`. That is what installing is.
 
 **The only thing that removes heuristic flags for good is a code signing certificate**, which costs money and builds reputation over time. Until this project has one, a new release can be flagged again. If it happens:
 
@@ -189,7 +189,7 @@ Rust (stable, MSVC) and Python 3 for the packaging helpers.
 
 ```bash
 cargo build --release          # target/release/IDM-lite.exe
-python tools/package.py        # dist/ with the exe, extension and installers
+python tools/package.py        # dist/ with the exe, extension and installers (Windows needs Inno Setup 6)
 python tools/make_icons.py     # regenerate icon.ico and the extension PNGs
 ```
 

@@ -4,7 +4,7 @@ name: release
 # to the release. Nothing cross-compiles: the Windows installer is built by
 # Windows, the .app by macOS, the .deb by Linux.
 #
-#   git tag v1.0.4 && git push origin v1.0.4
+#   git tag v1.0.5 && git push origin v1.0.5
 
 on:
   push:
@@ -65,6 +65,11 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev
+
+      # tools/package.py builds the Windows setup wizard with Inno Setup
+      - name: Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup -y --no-progress
 
       - name: Test before shipping
         run: cargo test --release
